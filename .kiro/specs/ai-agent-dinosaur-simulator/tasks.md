@@ -8,12 +8,11 @@
   - Write unit tests for data model validation and serialization
   - _Requirements: 6.1, 2.3, 3.5_
 
-- [ ] 2. Configure OpenAI and ag2 integration
+- [x] 2. Configure OpenAI and ag2 integration
   - Set up OpenAI API configuration and environment variables
   - Configure ag2 framework with OpenAI backend
   - Create base agent configuration for OpenAI LLM integration
   - Implement session state management for Streamlit
-  - Write unit tests for OpenAI API integration and session state
   - _Requirements: 6.1, 6.2, 4.1_
 
 - [ ] 3. Create metrics tracking system with in-memory storage

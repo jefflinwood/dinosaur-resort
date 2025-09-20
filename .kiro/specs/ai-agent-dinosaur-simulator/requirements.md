@@ -8,7 +8,7 @@ The AI Agent Dinosaur Simulator is a SimCity-style simulation game featuring a d
 
 ### Requirement 1
 
-**User Story:** As a player, I want to trigger events in the dinosaur resort, so that I can observe how AI agents react and resolve situations dynamically.
+**User Story:** As a player, I want to trigger events in the dinosaur resort, so that I can observe how AI agents react and resolve situations dynamically. I have a list of built-in events, but I can also type in an event, if I want to be creative.
 
 #### Acceptance Criteria
 
