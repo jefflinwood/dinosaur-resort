@@ -1,0 +1,1 @@
+# Managers package for AI Agent Dinosaur Simulator
