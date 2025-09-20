@@ -29,7 +29,7 @@
   - Write unit tests for event lifecycle management
   - _Requirements: 1.1, 5.1, 5.2, 5.3, 5.4, 5.5, 7.1_
 
-- [ ] 5. Create base agent system with ag2 and OpenAI
+- [x] 5. Create base agent system with ag2 and OpenAI
   - Create base Agent class extending ag2's ConversableAgent with OpenAI backend
   - Implement agent initialization with personality traits, roles, and OpenAI prompts
   - Configure agent system prompts for dinosaur resort simulation context

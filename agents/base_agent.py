@@ -1,12 +1,280 @@
-"""Base agent configuration for OpenAI LLM integration."""
+"""Base agent system with ag2 and OpenAI integration."""
 
 import logging
 from typing import Dict, List, Optional, Any
 from abc import ABC, abstractmethod
+from autogen import ConversableAgent
 from models.core import Agent
-from models.config import OpenAIConfig, AG2Config
-from models.enums import AgentRole, AgentState, PersonalityTrait
+from models.config import OpenAIConfig, AG2Config, Location
+from models.enums import AgentRole, AgentState, PersonalityTrait, DinosaurSpecies
 from managers.ag2_integration import AG2Integration
+
+
+class DinosaurAgent(ConversableAgent):
+    """Base agent class extending ag2's ConversableAgent with OpenAI backend for dinosaur resort simulation."""
+    
+    def __init__(self, agent_model: Agent, openai_config: OpenAIConfig, ag2_config: AG2Config):
+        """Initialize DinosaurAgent with ag2 and OpenAI integration.
+        
+        Args:
+            agent_model: The agent data model
+            openai_config: OpenAI API configuration
+            ag2_config: ag2 framework configuration
+        """
+        self.agent_model = agent_model
+        self.openai_config = openai_config
+        self.ag2_config = ag2_config
+        self.logger = logging.getLogger(f"{__name__}.{agent_model.name}")
+        
+        # Configure OpenAI for ag2
+        llm_config = {
+            "config_list": [{
+                "model": openai_config.model,
+                "api_key": openai_config.api_key,
+                "temperature": openai_config.temperature,
+                "max_tokens": openai_config.max_tokens,
+                "timeout": openai_config.timeout,
+            }],
+            "timeout": openai_config.timeout,
+        }
+        
+        # Generate system message based on role and personality
+        system_message = self._generate_system_message()
+        
+        # Initialize ConversableAgent
+        super().__init__(
+            name=agent_model.name,
+            system_message=system_message,
+            llm_config=llm_config,
+            human_input_mode=ag2_config.human_input_mode,
+            max_consecutive_auto_reply=ag2_config.max_round,
+            code_execution_config=ag2_config.code_execution_config,
+        )
+        
+        self.logger.info(f"Initialized DinosaurAgent {agent_model.name} with role {agent_model.role.name}")
+    
+    def _generate_system_message(self) -> str:
+        """Generate system message based on agent role and personality.
+        
+        Returns:
+            System message string for the agent
+        """
+        # Base context for dinosaur resort simulation
+        base_context = (
+            "You are an AI agent in a dinosaur resort simulation similar to Jurassic Park. "
+            "You will interact with other agents and respond to events that occur in the resort. "
+            "Always stay in character and respond according to your role and personality traits."
+        )
+        
+        # Role-specific context
+        role_context = self._get_role_context()
+        
+        # Personality description
+        personality_description = self._generate_personality_description()
+        
+        # Capabilities description
+        capabilities_description = self._generate_capabilities_description()
+        
+        # Location context
+        location_context = f"You are currently located at {self.agent_model.location.zone}."
+        
+        # Species context for dinosaurs
+        species_context = ""
+        if self.agent_model.role == AgentRole.DINOSAUR and self.agent_model.species:
+            species_context = f"You are a {self.agent_model.species.name.lower().replace('_', ' ')}."
+        
+        # Combine all parts
+        system_message_parts = [
+            base_context,
+            role_context,
+            personality_description,
+            capabilities_description,
+            location_context,
+            species_context
+        ]
+        
+        return " ".join(filter(None, system_message_parts))
+    
+    def _get_role_context(self) -> str:
+        """Get role-specific context for system message.
+        
+        Returns:
+            Role-specific context string
+        """
+        role_contexts = {
+            AgentRole.PARK_RANGER: (
+                "You are a park ranger responsible for wildlife management and visitor safety. "
+                "You have extensive knowledge of dinosaur behavior and park protocols. "
+                "You coordinate with other staff to ensure the safety of both visitors and dinosaurs."
+            ),
+            AgentRole.VETERINARIAN: (
+                "You are a veterinarian specializing in dinosaur health and medical care. "
+                "You can diagnose and treat various conditions and injuries in dinosaurs. "
+                "You work closely with park rangers and other staff to maintain dinosaur welfare."
+            ),
+            AgentRole.SECURITY: (
+                "You are a security officer responsible for park security and visitor protection. "
+                "You handle emergencies, maintain order, and coordinate with other staff during incidents. "
+                "Your primary concern is the safety and security of all park visitors and staff."
+            ),
+            AgentRole.MAINTENANCE: (
+                "You are a maintenance worker responsible for maintaining park facilities and equipment. "
+                "You can diagnose and fix technical problems with park infrastructure. "
+                "You ensure all systems are functioning properly to support park operations."
+            ),
+            AgentRole.TOURIST: (
+                "You are a visitor to the dinosaur resort with expectations for safety and entertainment. "
+                "You may have varying levels of interest in dinosaurs and different risk tolerances. "
+                "You provide feedback on your experience and may react to events around you."
+            ),
+            AgentRole.DINOSAUR: (
+                "You are a dinosaur with natural instincts and behaviors. "
+                "You respond to environmental changes, other dinosaurs, and human presence. "
+                "Your behavior is influenced by your species characteristics and current mood."
+            ),
+        }
+        
+        return role_contexts.get(self.agent_model.role, "")
+    
+    def _generate_personality_description(self) -> str:
+        """Generate personality description for system message.
+        
+        Returns:
+            Personality description string
+        """
+        if not self.agent_model.personality_traits:
+            return "You have a balanced personality."
+        
+        traits = []
+        for trait, value in self.agent_model.personality_traits.items():
+            if value > 0.8:
+                traits.append(f"very {trait}")
+            elif value > 0.6:
+                traits.append(f"quite {trait}")
+            elif value > 0.4:
+                traits.append(f"somewhat {trait}")
+        
+        if traits:
+            return f"Your personality is {', '.join(traits)}."
+        return "You have a balanced personality."
+    
+    def _generate_capabilities_description(self) -> str:
+        """Generate capabilities description for system message.
+        
+        Returns:
+            Capabilities description string
+        """
+        if not self.agent_model.capabilities:
+            return ""
+        
+        capabilities_str = ", ".join(self.agent_model.capabilities)
+        return f"Your key capabilities include: {capabilities_str}."
+    
+    def update_state(self, new_state: AgentState) -> None:
+        """Update the agent's current state.
+        
+        Args:
+            new_state: New state for the agent
+        """
+        old_state = self.agent_model.current_state
+        self.agent_model.current_state = new_state
+        self.logger.info(f"Agent {self.agent_model.name} state changed from {old_state.name} to {new_state.name}")
+    
+    def update_location(self, new_location: Location) -> None:
+        """Update the agent's location.
+        
+        Args:
+            new_location: New location for the agent
+        """
+        old_location = self.agent_model.location
+        self.agent_model.location = new_location
+        self.logger.info(f"Agent {self.agent_model.name} moved from {old_location.zone} to {new_location.zone}")
+    
+    def get_agent_info(self) -> Dict[str, Any]:
+        """Get comprehensive agent information.
+        
+        Returns:
+            Dictionary with agent information
+        """
+        return {
+            "id": self.agent_model.id,
+            "name": self.agent_model.name,
+            "role": self.agent_model.role.name,
+            "current_state": self.agent_model.current_state.name,
+            "location": {
+                "x": self.agent_model.location.x,
+                "y": self.agent_model.location.y,
+                "zone": self.agent_model.location.zone,
+                "description": self.agent_model.location.description
+            },
+            "personality_traits": self.agent_model.personality_traits,
+            "capabilities": self.agent_model.capabilities,
+            "species": self.agent_model.species.name if self.agent_model.species else None,
+            "system_message": self.system_message
+        }
+    
+    def handle_event_notification(self, event_message: str, event_context: Dict[str, Any]) -> str:
+        """Handle notification of an event in the simulation.
+        
+        Args:
+            event_message: Description of the event
+            event_context: Additional context about the event
+            
+        Returns:
+            Agent's response to the event
+        """
+        self.update_state(AgentState.RESPONDING_TO_EVENT)
+        
+        # Create context-aware message
+        context_message = f"EVENT NOTIFICATION: {event_message}"
+        if event_context:
+            context_parts = []
+            for key, value in event_context.items():
+                context_parts.append(f"{key}: {value}")
+            context_message += f" Context: {', '.join(context_parts)}"
+        
+        try:
+            # Generate response using ag2's ConversableAgent
+            response = self.generate_reply(
+                messages=[{"content": context_message, "role": "user", "name": "EventSystem"}]
+            )
+            
+            self.logger.info(f"Agent {self.agent_model.name} responded to event: {event_message}")
+            return response if isinstance(response, str) else str(response)
+        
+        except Exception as e:
+            self.logger.error(f"Error generating event response for {self.agent_model.name}: {e}")
+            return f"I acknowledge the event but cannot respond properly at this time."
+        
+        finally:
+            self.update_state(AgentState.IDLE)
+    
+    def communicate_with_agent(self, message: str, sender_name: str) -> str:
+        """Communicate with another agent.
+        
+        Args:
+            message: Message to send
+            sender_name: Name of the sending agent
+            
+        Returns:
+            Agent's response
+        """
+        self.update_state(AgentState.COMMUNICATING)
+        
+        try:
+            response = self.generate_reply(
+                messages=[{"content": message, "role": "user", "name": sender_name}]
+            )
+            
+            self.logger.info(f"Agent {self.agent_model.name} communicated with {sender_name}")
+            return response if isinstance(response, str) else str(response)
+        
+        except Exception as e:
+            self.logger.error(f"Error in communication for {self.agent_model.name}: {e}")
+            return "I'm having trouble communicating right now."
+        
+        finally:
+            self.update_state(AgentState.IDLE)
 
 
 class BaseAgentConfig:
@@ -91,7 +359,9 @@ class BaseAgentConfig:
     
     def create_agent_with_config(self, agent_id: str, name: str, role: AgentRole, 
                                 custom_personality: Optional[Dict[str, float]] = None,
-                                custom_capabilities: Optional[List[str]] = None) -> Agent:
+                                custom_capabilities: Optional[List[str]] = None,
+                                location: Optional[Location] = None,
+                                species: Optional[DinosaurSpecies] = None) -> Agent:
         """Create an agent with role-specific configuration.
         
         Args:
@@ -100,6 +370,8 @@ class BaseAgentConfig:
             role: Agent's role in the simulation
             custom_personality: Custom personality traits (overrides defaults)
             custom_capabilities: Custom capabilities (overrides defaults)
+            location: Agent's initial location
+            species: Dinosaur species (only for dinosaur agents)
             
         Returns:
             Configured Agent instance
@@ -114,6 +386,10 @@ class BaseAgentConfig:
         # Set capabilities
         capabilities = custom_capabilities or role_config.get("capabilities", [])
         
+        # Set default location if not provided
+        if location is None:
+            location = Location(0.0, 0.0, "entrance", "Main entrance area")
+        
         # Create agent
         agent = Agent(
             id=agent_id,
@@ -121,10 +397,25 @@ class BaseAgentConfig:
             role=role,
             personality_traits=personality_traits,
             capabilities=capabilities,
+            location=location,
+            species=species
         )
         
         self.logger.info(f"Created agent {name} with role {role.name}")
         return agent
+    
+    def create_dinosaur_agent(self, agent: Agent) -> DinosaurAgent:
+        """Create a DinosaurAgent instance from an Agent model.
+        
+        Args:
+            agent: Agent model to convert
+            
+        Returns:
+            DinosaurAgent instance with ag2 and OpenAI integration
+        """
+        dinosaur_agent = DinosaurAgent(agent, self.openai_config, self.ag2_config)
+        self.logger.info(f"Created DinosaurAgent for {agent.name}")
+        return dinosaur_agent
     
     def configure_agent_for_ag2(self, agent: Agent) -> None:
         """Configure an agent for ag2 integration.
@@ -218,11 +509,12 @@ class AgentFactory:
         self.logger = logging.getLogger(__name__)
         self._agent_counter = 0
     
-    def create_park_ranger(self, name: Optional[str] = None) -> Agent:
+    def create_park_ranger(self, name: Optional[str] = None, location: Optional[Location] = None) -> Agent:
         """Create a park ranger agent.
         
         Args:
             name: Optional custom name
+            location: Optional initial location
             
         Returns:
             Configured park ranger agent
@@ -234,14 +526,16 @@ class AgentFactory:
         return self.base_config.create_agent_with_config(
             agent_id=agent_id,
             name=agent_name,
-            role=AgentRole.PARK_RANGER
+            role=AgentRole.PARK_RANGER,
+            location=location
         )
     
-    def create_veterinarian(self, name: Optional[str] = None) -> Agent:
+    def create_veterinarian(self, name: Optional[str] = None, location: Optional[Location] = None) -> Agent:
         """Create a veterinarian agent.
         
         Args:
             name: Optional custom name
+            location: Optional initial location
             
         Returns:
             Configured veterinarian agent
@@ -253,14 +547,16 @@ class AgentFactory:
         return self.base_config.create_agent_with_config(
             agent_id=agent_id,
             name=agent_name,
-            role=AgentRole.VETERINARIAN
+            role=AgentRole.VETERINARIAN,
+            location=location
         )
     
-    def create_security_guard(self, name: Optional[str] = None) -> Agent:
+    def create_security_guard(self, name: Optional[str] = None, location: Optional[Location] = None) -> Agent:
         """Create a security guard agent.
         
         Args:
             name: Optional custom name
+            location: Optional initial location
             
         Returns:
             Configured security guard agent
@@ -272,14 +568,16 @@ class AgentFactory:
         return self.base_config.create_agent_with_config(
             agent_id=agent_id,
             name=agent_name,
-            role=AgentRole.SECURITY
+            role=AgentRole.SECURITY,
+            location=location
         )
     
-    def create_maintenance_worker(self, name: Optional[str] = None) -> Agent:
+    def create_maintenance_worker(self, name: Optional[str] = None, location: Optional[Location] = None) -> Agent:
         """Create a maintenance worker agent.
         
         Args:
             name: Optional custom name
+            location: Optional initial location
             
         Returns:
             Configured maintenance worker agent
@@ -291,16 +589,19 @@ class AgentFactory:
         return self.base_config.create_agent_with_config(
             agent_id=agent_id,
             name=agent_name,
-            role=AgentRole.MAINTENANCE
+            role=AgentRole.MAINTENANCE,
+            location=location
         )
     
     def create_tourist(self, name: Optional[str] = None, 
-                      personality_traits: Optional[Dict[str, float]] = None) -> Agent:
+                      personality_traits: Optional[Dict[str, float]] = None,
+                      location: Optional[Location] = None) -> Agent:
         """Create a tourist agent.
         
         Args:
             name: Optional custom name
             personality_traits: Optional custom personality traits
+            location: Optional initial location
             
         Returns:
             Configured tourist agent
@@ -313,47 +614,47 @@ class AgentFactory:
             agent_id=agent_id,
             name=agent_name,
             role=AgentRole.TOURIST,
-            custom_personality=personality_traits
+            custom_personality=personality_traits,
+            location=location
         )
     
-    def create_dinosaur(self, name: str, species, 
-                       personality_traits: Optional[Dict[str, float]] = None) -> Agent:
+    def create_dinosaur(self, name: str, species: DinosaurSpecies, 
+                       personality_traits: Optional[Dict[str, float]] = None,
+                       location: Optional[Location] = None) -> Agent:
         """Create a dinosaur agent.
         
         Args:
             name: Dinosaur name
             species: Dinosaur species
             personality_traits: Optional custom personality traits
+            location: Optional initial location
             
         Returns:
             Configured dinosaur agent
         """
-        from models.config import Location
-        
         self._agent_counter += 1
         agent_id = f"dinosaur_{self._agent_counter}"
         
-        # Create agent manually to set species before validation
-        role_config = self.base_config.role_configs.get(AgentRole.DINOSAUR, {})
+        # Set default location if not provided
+        if location is None:
+            location = Location(0.0, 0.0, "habitat", "Dinosaur habitat area")
         
-        # Set personality traits
-        personality_traits_final = role_config.get("personality_defaults", {}).copy()
-        if personality_traits:
-            personality_traits_final.update(personality_traits)
-        
-        # Set capabilities
-        capabilities = role_config.get("capabilities", [])
-        
-        # Create agent with species set
-        agent = Agent(
-            id=agent_id,
+        return self.base_config.create_agent_with_config(
+            agent_id=agent_id,
             name=name,
             role=AgentRole.DINOSAUR,
-            personality_traits=personality_traits_final,
-            capabilities=capabilities,
-            species=species,  # Set species before validation
-            location=Location(0.0, 0.0, "entrance")
+            custom_personality=personality_traits,
+            location=location,
+            species=species
         )
+    
+    def create_dinosaur_agent_instance(self, agent: Agent) -> DinosaurAgent:
+        """Create a DinosaurAgent instance from an Agent model.
         
-        self.logger.info(f"Created dinosaur agent {name} with species {species.name}")
-        return agent
+        Args:
+            agent: Agent model to convert
+            
+        Returns:
+            DinosaurAgent instance with ag2 and OpenAI integration
+        """
+        return self.base_config.create_dinosaur_agent(agent)
