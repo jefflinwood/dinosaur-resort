@@ -308,7 +308,7 @@ class RealTimeAgentChat:
                     self.message_queue.put(message)
     
     def _generate_quick_response(self, agent: Agent, event: Event) -> Optional[str]:
-        """Generate a quick response for an agent to an event.
+        """Generate a quick response for an agent to an event using OpenAI.
         
         Args:
             agent: Agent generating the response
@@ -318,81 +318,147 @@ class RealTimeAgentChat:
             Quick response string or None
         """
         try:
-            # Get response templates for this agent role
-            role_templates = self.response_templates.get(agent.role, {})
+            # Use OpenAI to generate a response with templates as examples
+            response = self._generate_openai_response(agent, event, "event_response")
             
-            # Determine event category
-            event_category = self._categorize_event(event)
-            
-            # Get appropriate templates
-            templates = role_templates.get(event_category, [])
-            
-            if templates:
-                # Use a simple rotation or random selection for variety
-                template_index = (self.message_count + hash(agent.id)) % len(templates)
-                base_response = templates[template_index]
-                
-                # Add some context if needed
+            if response:
+                # Add urgency indicators based on severity
                 if event.severity >= 8:
-                    base_response = f"🚨 URGENT: {base_response}"
+                    response = f"🚨 URGENT: {response}"
                 elif event.severity >= 6:
-                    base_response = f"⚠️ {base_response}"
+                    response = f"⚠️ {response}"
                 
-                return base_response
+                return response
             else:
-                # More interesting fallback responses based on role
-                role_fallbacks = {
-                    AgentRole.PARK_RANGER: [
-                        f"Assessing situation at {event.location.zone} and coordinating response.",
-                        f"Implementing safety protocols for {event.location.zone} area.",
-                        f"Mobilizing ranger team to handle {event.type.name.replace('_', ' ').lower()}."
-                    ],
-                    AgentRole.SECURITY: [
-                        f"Securing {event.location.zone} and establishing safety perimeter.",
-                        f"All security units responding to {event.location.zone}.",
-                        f"Implementing emergency lockdown procedures for {event.location.zone}."
-                    ],
-                    AgentRole.VETERINARIAN: [
-                        f"Medical team en route to {event.location.zone}.",
-                        f"Preparing emergency medical protocols for {event.location.zone}.",
-                        f"Veterinary response team mobilizing to {event.location.zone}."
-                    ],
-                    AgentRole.GUEST_RELATIONS: [
-                        f"🎪 Exciting activities starting near {event.location.zone}!",
-                        f"🍿 Special entertainment beginning at the visitor center!",
-                        f"📸 Unique photo opportunities available at the gift shop!"
-                    ],
-                    AgentRole.MAINTENANCE: [
-                        f"Technical team responding to {event.location.zone}.",
-                        f"Checking all systems in {event.location.zone} area.",
-                        f"Maintenance protocols activated for {event.location.zone}."
-                    ],
-                    AgentRole.TOURIST: [
-                        f"What's happening at {event.location.zone}? Should we be concerned?",
-                        f"Is this normal for {event.location.zone}? Nobody told us about this!",
-                        f"Are we getting refunds if {event.location.zone} is closed?",
-                        f"The kids are scared about what's happening at {event.location.zone}!"
-                    ],
-                    AgentRole.DINOSAUR: [
-                        f"🦕 *alert roar* Something's happening in my territory at {event.location.zone}!",
-                        f"🦖 *investigative sniffing* Unusual activity detected at {event.location.zone}.",
-                        f"🦕 *protective stance* Monitoring situation at {event.location.zone}.",
-                        f"🦖 *territorial display* {event.location.zone} is under my watch!"
-                    ]
-                }
-                
-                fallbacks = role_fallbacks.get(agent.role, [
-                    f"Responding to situation at {event.location.zone}.",
-                    f"Taking appropriate action for {event.type.name.replace('_', ' ').lower()}."
-                ])
-                
-                # Use hash for consistent but varied responses
-                fallback_index = hash(agent.id + event.id) % len(fallbacks)
-                return fallbacks[fallback_index]
+                # Fallback to template if OpenAI fails
+                return self._get_template_fallback(agent, event)
         
         except Exception as e:
             self.logger.error(f"Error generating quick response for {agent.name}: {e}")
-            return f"Acknowledged {event.type.name.replace('_', ' ').lower()}. Taking appropriate action."
+            return self._get_template_fallback(agent, event)
+    
+    def _generate_openai_response(self, agent: Agent, event: Event, response_type: str = "event_response") -> Optional[str]:
+        """Generate a response using OpenAI API.
+        
+        Args:
+            agent: Agent generating the response
+            event: Event context
+            response_type: Type of response (event_response, follow_up, second_wave)
+            
+        Returns:
+            Generated response or None if failed
+        """
+        try:
+            import openai
+            
+            # Get example responses for this agent role and event type
+            examples = self._get_response_examples(agent.role, event, response_type)
+            
+            # Create role-specific system prompt
+            role_descriptions = {
+                AgentRole.PARK_RANGER: "You are a park ranger responsible for wildlife management and visitor safety. You are experienced, professional, and focused on coordinating responses.",
+                AgentRole.SECURITY: "You are a security officer responsible for park security and visitor protection. You are alert, decisive, and focused on maintaining order.",
+                AgentRole.VETERINARIAN: "You are a veterinarian specializing in dinosaur health. You are caring, knowledgeable, and focused on animal welfare.",
+                AgentRole.GUEST_RELATIONS: "You are a guest relations manager focused on maintaining visitor satisfaction and spinning situations positively. You create cheerful distractions and always stay upbeat.",
+                AgentRole.MAINTENANCE: "You are a maintenance worker responsible for park facilities. You are practical, technical, and focused on keeping systems running.",
+                AgentRole.TOURIST: "You are a visitor to the dinosaur park. You may be excited, worried, confused, or demanding depending on the situation. You speak like a regular person, not a professional.",
+                AgentRole.DINOSAUR: "You are a dinosaur with natural instincts. You communicate through roars, body language, and simple thoughts. Use emojis like 🦕 🦖 and describe your actions with *asterisks*."
+            }
+            
+            system_prompt = f"""
+{role_descriptions.get(agent.role, "You are an agent in a dinosaur park simulation.")}
+
+Respond to the following event with a brief, natural message (1-2 sentences maximum). Stay in character for your role.
+
+Event: {event.type.name.replace('_', ' ').title()} at {event.location.zone}
+Severity: {event.severity}/10
+Description: {event.description or 'No additional details'}
+
+Examples of good responses for your role:
+{chr(10).join(f"- {example}" for example in examples[:3])}
+
+Keep your response brief, natural, and in character. Do not explain your role or repeat the event details.
+"""
+            
+            # Make OpenAI API call with shorter max tokens for speed
+            client = openai.OpenAI(api_key=self.openai_config.api_key)
+            
+            response = client.chat.completions.create(
+                model=self.openai_config.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Respond to this {event.type.name.replace('_', ' ').lower()} event as {agent.name} ({agent.role.name.replace('_', ' ').title()})."}
+                ],
+                max_tokens=50,  # Keep responses short for speed
+                temperature=0.8,  # Add some variety
+                timeout=5  # 5 second timeout for speed
+            )
+            
+            if response.choices and response.choices[0].message.content:
+                generated_response = response.choices[0].message.content.strip()
+                
+                # Clean up the response
+                generated_response = generated_response.replace('"', '').replace("'", "'")
+                
+                # Ensure it's not too long
+                if len(generated_response) > 150:
+                    generated_response = generated_response[:147] + "..."
+                
+                return generated_response
+            
+            return None
+        
+        except Exception as e:
+            self.logger.error(f"OpenAI API error for {agent.name}: {e}")
+            return None
+    
+    def _get_response_examples(self, role: AgentRole, event: Event, response_type: str) -> List[str]:
+        """Get example responses for a role and event type.
+        
+        Args:
+            role: Agent role
+            event: Event context
+            response_type: Type of response needed
+            
+        Returns:
+            List of example responses
+        """
+        # Get templates as examples for OpenAI
+        role_templates = self.response_templates.get(role, {})
+        event_category = self._categorize_event(event)
+        
+        examples = role_templates.get(event_category, [])
+        
+        if not examples:
+            # Get general examples for the role
+            all_examples = []
+            for category_examples in role_templates.values():
+                all_examples.extend(category_examples)
+            examples = all_examples[:3] if all_examples else ["Responding to the situation appropriately."]
+        
+        return examples[:5]  # Limit examples to keep prompt manageable
+    
+    def _get_template_fallback(self, agent: Agent, event: Event) -> str:
+        """Get a template-based fallback response when OpenAI fails.
+        
+        Args:
+            agent: Agent generating the response
+            event: Event to respond to
+            
+        Returns:
+            Fallback response string
+        """
+        # Use the original template logic as fallback
+        role_templates = self.response_templates.get(agent.role, {})
+        event_category = self._categorize_event(event)
+        templates = role_templates.get(event_category, [])
+        
+        if templates:
+            template_index = (self.message_count + hash(agent.id)) % len(templates)
+            return templates[template_index]
+        else:
+            # Simple fallback
+            return f"Responding to {event.type.name.replace('_', ' ').lower()} at {event.location.zone}."
     
     def _categorize_event(self, event: Event) -> str:
         """Categorize an event for response template selection.
@@ -609,7 +675,7 @@ class RealTimeAgentChat:
         return responding_agents[:5]
     
     def _generate_follow_up_response(self, agent: Agent, original_message: QuickChatMessage) -> Optional[str]:
-        """Generate a follow-up response from an agent.
+        """Generate a follow-up response from an agent using OpenAI.
         
         Args:
             agent: Agent generating the follow-up
@@ -619,64 +685,152 @@ class RealTimeAgentChat:
             Follow-up response string or None
         """
         try:
-            # Get role-specific follow-up templates
-            follow_up_templates = {
-                AgentRole.SECURITY: [
-                    "Security team standing by to assist.",
-                    "Perimeter secured, ready for coordination.",
-                    "All security protocols activated."
-                ],
-                AgentRole.GUEST_RELATIONS: [
-                    "Implementing guest comfort measures now!",
-                    "Positive messaging campaign activated!",
-                    "Guest satisfaction protocols in effect!"
-                ],
-                AgentRole.VETERINARIAN: [
-                    "Medical team ready to support as needed.",
-                    "Health and safety protocols confirmed.",
-                    "Standing by for any medical assistance."
-                ],
-                AgentRole.PARK_RANGER: [
-                    "Coordinating response with all teams.",
-                    "Wildlife safety measures confirmed.",
-                    "All ranger units coordinated and ready."
-                ],
-                AgentRole.MAINTENANCE: [
-                    "Technical support standing by.",
-                    "All systems checked and operational.",
-                    "Maintenance team ready to assist."
-                ],
-                AgentRole.TOURIST: [
-                    "Wait, what's happening now?",
-                    "Should we be worried about this?",
-                    "Is this part of the show?",
-                    "Can someone explain what's going on?",
-                    "Are we safe here?",
-                    "This is not what I expected from a family vacation!"
-                ],
-                AgentRole.DINOSAUR: [
-                    "🦕 *curious sniffing* What's all the commotion about?",
-                    "🦖 *alert posture* Something's different in my territory.",
-                    "🦕 *nervous shuffling* The humans seem agitated.",
-                    "🦖 *investigative roar* Is there danger nearby?",
-                    "🦕 *protective stance* Must watch over my area."
-                ]
-            }
+            # Try OpenAI first for more natural follow-ups
+            if original_message.event_id:
+                # Create a mock event for context (we don't have the full event object here)
+                mock_event = type('MockEvent', (), {
+                    'type': type('EventType', (), {'name': 'ONGOING_SITUATION'}),
+                    'location': type('Location', (), {'zone': 'incident_area'}),
+                    'severity': 5,
+                    'description': f"Follow-up to ongoing situation"
+                })()
+                
+                openai_response = self._generate_openai_follow_up(agent, original_message, mock_event)
+                if openai_response:
+                    return openai_response
             
-            templates = follow_up_templates.get(agent.role, [])
-            if templates:
-                # Simple rotation for variety
-                template_index = (self.message_count + hash(agent.id)) % len(templates)
-                return templates[template_index]
+            # Fallback to templates
+            return self._get_follow_up_template(agent)
+        
+        except Exception as e:
+            self.logger.error(f"Error generating follow-up response for {agent.name}: {e}")
+            return self._get_follow_up_template(agent)
+    
+    def _generate_openai_follow_up(self, agent: Agent, original_message: QuickChatMessage, event) -> Optional[str]:
+        """Generate a follow-up response using OpenAI.
+        
+        Args:
+            agent: Agent generating the follow-up
+            original_message: Original message being responded to
+            event: Event context
+            
+        Returns:
+            Generated follow-up response or None
+        """
+        try:
+            import openai
+            
+            # Get examples for follow-up responses
+            examples = self._get_follow_up_examples(agent.role)
+            
+            system_prompt = f"""
+You are {agent.name}, a {agent.role.name.replace('_', ' ').title()} in a dinosaur park. 
+
+Another agent just said: "{original_message.content}"
+
+Respond with a brief follow-up message (1-2 sentences) that shows you're coordinating or reacting to their message. Stay in character.
+
+Examples of good follow-up responses for your role:
+{chr(10).join(f"- {example}" for example in examples[:3])}
+
+Keep it brief and natural. Don't repeat what was already said.
+"""
+            
+            client = openai.OpenAI(api_key=self.openai_config.api_key)
+            
+            response = client.chat.completions.create(
+                model=self.openai_config.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Generate a brief follow-up response as {agent.name}."}
+                ],
+                max_tokens=40,  # Even shorter for follow-ups
+                temperature=0.9,  # More variety for follow-ups
+                timeout=5
+            )
+            
+            if response.choices and response.choices[0].message.content:
+                generated_response = response.choices[0].message.content.strip()
+                generated_response = generated_response.replace('"', '').replace("'", "'")
+                
+                if len(generated_response) > 120:
+                    generated_response = generated_response[:117] + "..."
+                
+                return generated_response
             
             return None
         
         except Exception as e:
-            self.logger.error(f"Error generating follow-up response for {agent.name}: {e}")
+            self.logger.error(f"OpenAI follow-up error for {agent.name}: {e}")
             return None
     
+    def _get_follow_up_examples(self, role: AgentRole) -> List[str]:
+        """Get example follow-up responses for a role.
+        
+        Args:
+            role: Agent role
+            
+        Returns:
+            List of example follow-up responses
+        """
+        follow_up_examples = {
+            AgentRole.SECURITY: [
+                "Security team standing by to assist.",
+                "Perimeter secured, ready for coordination.",
+                "All security protocols activated."
+            ],
+            AgentRole.GUEST_RELATIONS: [
+                "Implementing guest comfort measures now!",
+                "Positive messaging campaign activated!",
+                "Guest satisfaction protocols in effect!"
+            ],
+            AgentRole.VETERINARIAN: [
+                "Medical team ready to support as needed.",
+                "Health and safety protocols confirmed.",
+                "Standing by for any medical assistance."
+            ],
+            AgentRole.PARK_RANGER: [
+                "Coordinating response with all teams.",
+                "Wildlife safety measures confirmed.",
+                "All ranger units coordinated and ready."
+            ],
+            AgentRole.MAINTENANCE: [
+                "Technical support standing by.",
+                "All systems checked and operational.",
+                "Maintenance team ready to assist."
+            ],
+            AgentRole.TOURIST: [
+                "Wait, what's happening now?",
+                "Should we be worried about this?",
+                "Is this part of the show?",
+                "Can someone explain what's going on?"
+            ],
+            AgentRole.DINOSAUR: [
+                "🦕 *curious sniffing* What's all the commotion about?",
+                "🦖 *alert posture* Something's different in my territory.",
+                "🦕 *nervous shuffling* The humans seem agitated."
+            ]
+        }
+        
+        return follow_up_examples.get(role, ["Standing by for further instructions."])
+    
+    def _get_follow_up_template(self, agent: Agent) -> Optional[str]:
+        """Get a template-based follow-up response as fallback.
+        
+        Args:
+            agent: Agent generating the follow-up
+            
+        Returns:
+            Template follow-up response or None
+        """
+        examples = self._get_follow_up_examples(agent.role)
+        if examples:
+            template_index = (self.message_count + hash(agent.id)) % len(examples)
+            return examples[template_index]
+        return None
+    
     def _generate_second_wave_response(self, agent: Agent, original_message: QuickChatMessage) -> Optional[str]:
-        """Generate a second wave follow-up response to keep conversations going.
+        """Generate a second wave follow-up response using OpenAI to keep conversations going.
         
         Args:
             agent: Agent generating the second follow-up
@@ -686,61 +840,140 @@ class RealTimeAgentChat:
             Second wave response string or None
         """
         try:
-            # Second wave responses are more situational and reactive
-            second_wave_templates = {
-                AgentRole.TOURIST: [
-                    "Okay, but seriously, when do we get our money back?",
-                    "My kids are asking if the dinosaurs are real. What do I tell them?",
-                    "Is there a manager I can speak to about this situation?",
-                    "The gift shop better have some good discounts after this!",
-                    "I'm posting about this on social media right now.",
-                    "Next time I'm going to Disney World instead."
-                ],
-                AgentRole.DINOSAUR: [
-                    "🦕 *settles down* The excitement seems to be calming down.",
-                    "🦖 *yawns* All this drama is making me sleepy.",
-                    "🦕 *returns to grazing* Back to the important business of eating.",
-                    "🦖 *stretches* Time for my afternoon nap.",
-                    "🦕 *social call* Calling to my friends to make sure they're okay."
-                ],
-                AgentRole.GUEST_RELATIONS: [
-                    "📢 Don't forget to visit our newly opened souvenir photo booth!",
-                    "🎁 Complimentary dinosaur plushies for all affected guests!",
-                    "🍦 The ice cream cart is now offering double scoops!",
-                    "📸 Professional photographers available for family photos!",
-                    "🎪 Special behind-the-scenes tour starting in 10 minutes!"
-                ],
-                AgentRole.SECURITY: [
-                    "All clear - situation is under control.",
-                    "Resuming normal patrol patterns.",
-                    "Incident report filed and documented.",
-                    "Additional security measures implemented."
-                ],
-                AgentRole.PARK_RANGER: [
-                    "Wildlife behavior returning to normal patterns.",
-                    "All safety protocols have been effective.",
-                    "Continuing to monitor the situation closely.",
-                    "Coordinating with all teams for full resolution."
-                ],
-                AgentRole.VETERINARIAN: [
-                    "All animals showing normal vital signs.",
-                    "No medical intervention required at this time.",
-                    "Continuing health monitoring protocols.",
-                    "Ready to respond if medical needs arise."
-                ]
-            }
+            # Try OpenAI for more natural second wave responses
+            openai_response = self._generate_openai_second_wave(agent, original_message)
+            if openai_response:
+                return openai_response
             
-            templates = second_wave_templates.get(agent.role, [])
-            if templates:
-                # Use different hash for variety in second wave
-                template_index = (hash(agent.id + original_message.id + "wave2")) % len(templates)
-                return templates[template_index]
+            # Fallback to templates
+            return self._get_second_wave_template(agent, original_message)
+        
+        except Exception as e:
+            self.logger.error(f"Error generating second wave response for {agent.name}: {e}")
+            return self._get_second_wave_template(agent, original_message)
+    
+    def _generate_openai_second_wave(self, agent: Agent, original_message: QuickChatMessage) -> Optional[str]:
+        """Generate a second wave response using OpenAI.
+        
+        Args:
+            agent: Agent generating the second wave response
+            original_message: Original message that started the conversation
+            
+        Returns:
+            Generated second wave response or None
+        """
+        try:
+            import openai
+            
+            # Get examples for second wave responses
+            examples = self._get_second_wave_examples(agent.role)
+            
+            system_prompt = f"""
+You are {agent.name}, a {agent.role.name.replace('_', ' ').title()} in a dinosaur park.
+
+A few minutes have passed since the initial incident. The original situation was: "{original_message.content}"
+
+Now provide a brief follow-up comment (1-2 sentences) showing how the situation has evolved or your current status. This is a "second wave" response - things might be calming down, or you might have new concerns.
+
+Examples of good second wave responses for your role:
+{chr(10).join(f"- {example}" for example in examples[:3])}
+
+Keep it brief and show how time has passed or the situation has evolved.
+"""
+            
+            client = openai.OpenAI(api_key=self.openai_config.api_key)
+            
+            response = client.chat.completions.create(
+                model=self.openai_config.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Generate a brief second wave response as {agent.name}."}
+                ],
+                max_tokens=40,
+                temperature=0.9,
+                timeout=5
+            )
+            
+            if response.choices and response.choices[0].message.content:
+                generated_response = response.choices[0].message.content.strip()
+                generated_response = generated_response.replace('"', '').replace("'", "'")
+                
+                if len(generated_response) > 120:
+                    generated_response = generated_response[:117] + "..."
+                
+                return generated_response
             
             return None
         
         except Exception as e:
-            self.logger.error(f"Error generating second wave response for {agent.name}: {e}")
+            self.logger.error(f"OpenAI second wave error for {agent.name}: {e}")
             return None
+    
+    def _get_second_wave_examples(self, role: AgentRole) -> List[str]:
+        """Get example second wave responses for a role.
+        
+        Args:
+            role: Agent role
+            
+        Returns:
+            List of example second wave responses
+        """
+        second_wave_examples = {
+            AgentRole.TOURIST: [
+                "Okay, but seriously, when do we get our money back?",
+                "My kids are asking if the dinosaurs are real. What do I tell them?",
+                "Is there a manager I can speak to about this situation?",
+                "The gift shop better have some good discounts after this!"
+            ],
+            AgentRole.DINOSAUR: [
+                "🦕 *settles down* The excitement seems to be calming down.",
+                "🦖 *yawns* All this drama is making me sleepy.",
+                "🦕 *returns to grazing* Back to the important business of eating.",
+                "🦖 *stretches* Time for my afternoon nap."
+            ],
+            AgentRole.GUEST_RELATIONS: [
+                "📢 Don't forget to visit our newly opened souvenir photo booth!",
+                "🎁 Complimentary dinosaur plushies for all affected guests!",
+                "🍦 The ice cream cart is now offering double scoops!",
+                "📸 Professional photographers available for family photos!"
+            ],
+            AgentRole.SECURITY: [
+                "All clear - situation is under control.",
+                "Resuming normal patrol patterns.",
+                "Incident report filed and documented.",
+                "Additional security measures implemented."
+            ],
+            AgentRole.PARK_RANGER: [
+                "Wildlife behavior returning to normal patterns.",
+                "All safety protocols have been effective.",
+                "Continuing to monitor the situation closely.",
+                "Coordinating with all teams for full resolution."
+            ],
+            AgentRole.VETERINARIAN: [
+                "All animals showing normal vital signs.",
+                "No medical intervention required at this time.",
+                "Continuing health monitoring protocols.",
+                "Ready to respond if medical needs arise."
+            ]
+        }
+        
+        return second_wave_examples.get(role, ["Situation continuing to develop."])
+    
+    def _get_second_wave_template(self, agent: Agent, original_message: QuickChatMessage) -> Optional[str]:
+        """Get a template-based second wave response as fallback.
+        
+        Args:
+            agent: Agent generating the second wave response
+            original_message: Original message context
+            
+        Returns:
+            Template second wave response or None
+        """
+        examples = self._get_second_wave_examples(agent.role)
+        if examples:
+            template_index = (hash(agent.id + original_message.id + "wave2")) % len(examples)
+            return examples[template_index]
+        return None
     
     def get_recent_messages(self, count: int = 20) -> List[QuickChatMessage]:
         """Get recent chat messages.
