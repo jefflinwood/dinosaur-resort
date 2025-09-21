@@ -102,6 +102,10 @@ class RealTimeDataSynchronizer:
                         # Get all conversation history from agent manager
                         all_conversations = simulation_manager.agent_manager.get_agent_conversations()
                         
+                        # Debug logging
+                        self.logger.debug(f"Found {len(all_conversations)} conversation records in agent manager")
+                        print(f"DEBUG SYNC: Found {len(all_conversations)} conversation records in agent manager")  # Debug print
+                        
                         if all_conversations:
                             # Get existing conversation history to avoid duplicates
                             existing_conversations = self.session_manager.get_conversation_history()
@@ -139,6 +143,7 @@ class RealTimeDataSynchronizer:
                                             }
                                             self.session_manager.add_conversation_message(agent_id, message)
                                             new_conversations_added = True
+                                            self.logger.debug(f"Added conversation message for agent {agent_id}: {response[:50]}...")
                             
                             if new_conversations_added:
                                 sync_results["components_synced"].append("agent_conversations")

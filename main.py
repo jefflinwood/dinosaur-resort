@@ -647,6 +647,14 @@ def render_agent_monitor(session_manager: SessionStateManager):
                     if sim_manager:
                         sync_context = create_real_time_sync_context(session_manager)
                         sync_results = sync_context["synchronizer"].sync_simulation_data(sim_manager)
+                        
+                        # Show detailed sync results
+                        st.write("**Sync Results:**")
+                        st.write(f"- Success: {sync_results.get('success')}")
+                        st.write(f"- Components synced: {sync_results.get('components_synced', [])}")
+                        st.write(f"- Data updated: {sync_results.get('data_updated')}")
+                        st.write(f"- Errors: {sync_results.get('errors', [])}")
+                        
                         if sync_results.get("data_updated"):
                             st.success("✅ Conversations synced!")
                         else:
@@ -654,6 +662,24 @@ def render_agent_monitor(session_manager: SessionStateManager):
                         st.rerun()
             except Exception as e:
                 st.error(f"Sync failed: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+    
+    # Test button to add a fake conversation for debugging
+    if st.button("🧪 Add Test Conversation"):
+        test_message = {
+            'timestamp': datetime.now().isoformat(),
+            'sender': 'test_agent',
+            'recipient': 'system',
+            'content': 'This is a test message to verify the conversation display is working.',
+            'event_context': {
+                'event_id': 'test_event',
+                'event_type': 'TEST'
+            }
+        }
+        session_manager.add_conversation_message('test_agent', test_message)
+        st.success("Test conversation added!")
+        st.rerun()
     
     # Auto-refresh functionality
     if auto_refresh:
@@ -891,6 +917,10 @@ def render_agent_monitor(session_manager: SessionStateManager):
     
     # Show recent conversations across all agents
     conversation_history = session_manager.get_conversation_history()
+    
+    # Always show the count for debugging
+    st.write(f"**Conversation History Status:** {len(conversation_history)} agents with conversations")
+    
     if conversation_history:
         # Get all recent messages (last 10 across all agents)
         all_messages = []
@@ -898,7 +928,11 @@ def render_agent_monitor(session_manager: SessionStateManager):
             for msg in messages[-5:]:  # Last 5 messages per agent
                 msg_with_agent = msg.copy()
                 msg_with_agent['agent_id'] = agent_id
-                msg_with_agent['agent_name'] = filtered_agents.get(agent_id, {}).get('name', agent_id) if agent_id in filtered_agents else agent_id
+                # Get agent name from filtered_agents (which contains Agent objects)
+                if agent_id in filtered_agents:
+                    msg_with_agent['agent_name'] = filtered_agents[agent_id].name
+                else:
+                    msg_with_agent['agent_name'] = agent_id
                 all_messages.append(msg_with_agent)
         
         # Sort by timestamp

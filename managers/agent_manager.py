@@ -292,6 +292,7 @@ class AgentManager:
             Dictionary with broadcast results and agent responses
         """
         self.logger.info(f"Broadcasting event {event.id} ({event.type.name}) to agents")
+        print(f"DEBUG: Broadcasting event {event.id} to agents")  # Debug print
         
         try:
             # Determine affected agents based on event type and location
@@ -541,6 +542,7 @@ class AgentManager:
         }
         
         self.conversation_history.append(communication_record)
+        print(f"DEBUG: Recorded conversation for event {event.id}, {len(individual_responses)} responses")  # Debug print
         
         # Keep only last 100 communications
         if len(self.conversation_history) > 100:
