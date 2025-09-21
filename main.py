@@ -2388,9 +2388,15 @@ def render_agent_chat(session_manager: SessionStateManager):
                             event_id
                         )
                         
-                        # Add individual agent responses
+                        # Add individual agent responses (filter out boring ones)
                         individual_responses = conv.get('individual_responses', {})
                         for agent_id, response in individual_responses.items():
+                            # Skip boring responses
+                            if response and ("responding to" in response.lower() or 
+                                           "acknowledged" in response.lower() or
+                                           len(response) < 50):
+                                continue
+                            
                             # Get agent name from session state
                             agents = session_manager.get_agents()
                             agent_name = agent_id

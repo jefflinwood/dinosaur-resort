@@ -286,8 +286,43 @@ class RealTimeAgentChat:
                 
                 return base_response
             else:
-                # Fallback generic response
-                return f"Responding to {event.type.name.replace('_', ' ').lower()} at {event.location.zone}."
+                # More interesting fallback responses based on role
+                role_fallbacks = {
+                    AgentRole.PARK_RANGER: [
+                        f"Assessing situation at {event.location.zone} and coordinating response.",
+                        f"Implementing safety protocols for {event.location.zone} area.",
+                        f"Mobilizing ranger team to handle {event.type.name.replace('_', ' ').lower()}."
+                    ],
+                    AgentRole.SECURITY: [
+                        f"Securing {event.location.zone} and establishing safety perimeter.",
+                        f"All security units responding to {event.location.zone}.",
+                        f"Implementing emergency lockdown procedures for {event.location.zone}."
+                    ],
+                    AgentRole.VETERINARIAN: [
+                        f"Medical team en route to {event.location.zone}.",
+                        f"Preparing emergency medical protocols for {event.location.zone}.",
+                        f"Veterinary response team mobilizing to {event.location.zone}."
+                    ],
+                    AgentRole.GUEST_RELATIONS: [
+                        f"🎪 Exciting activities starting near {event.location.zone}!",
+                        f"🍿 Special entertainment beginning at the visitor center!",
+                        f"📸 Unique photo opportunities available at the gift shop!"
+                    ],
+                    AgentRole.MAINTENANCE: [
+                        f"Technical team responding to {event.location.zone}.",
+                        f"Checking all systems in {event.location.zone} area.",
+                        f"Maintenance protocols activated for {event.location.zone}."
+                    ]
+                }
+                
+                fallbacks = role_fallbacks.get(agent.role, [
+                    f"Responding to situation at {event.location.zone}.",
+                    f"Taking appropriate action for {event.type.name.replace('_', ' ').lower()}."
+                ])
+                
+                # Use hash for consistent but varied responses
+                fallback_index = hash(agent.id + event.id) % len(fallbacks)
+                return fallbacks[fallback_index]
         
         except Exception as e:
             self.logger.error(f"Error generating quick response for {agent.name}: {e}")

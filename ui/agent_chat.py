@@ -62,6 +62,11 @@ class AgentChatInterface:
                 if message_id in st.session_state.processed_real_time_messages:
                     continue
                 
+                # Filter out boring generic messages
+                if self._is_boring_message(quick_message.content):
+                    st.session_state.processed_real_time_messages.add(message_id)
+                    continue
+                
                 # Convert QuickChatMessage to UI format
                 chat_message = {
                     'timestamp': quick_message.timestamp,
@@ -96,6 +101,35 @@ class AgentChatInterface:
         except Exception as e:
             print(f"DEBUG REAL-TIME: Error syncing messages: {e}")
             # Don't let sync errors break the UI
+    
+    def _is_boring_message(self, content: str) -> bool:
+        """Check if a message is boring and should be filtered out.
+        
+        Args:
+            content: Message content to check
+            
+        Returns:
+            True if message should be filtered out
+        """
+        boring_patterns = [
+            "responding to",
+            "acknowledged",
+            "taking appropriate action",
+            "situation at",
+            "protocols activated",
+            "team responding",
+            "checking all systems"
+        ]
+        
+        content_lower = content.lower()
+        
+        # Filter out messages that are just generic responses
+        for pattern in boring_patterns:
+            if pattern in content_lower and len(content) < 100:  # Short generic messages
+                return True
+        
+        # Keep messages that are more specific or longer
+        return False
     
     def add_agent_message(self, agent_id: str, agent_name: str, message: str, 
                          event_context: Optional[Dict[str, Any]] = None) -> None:
