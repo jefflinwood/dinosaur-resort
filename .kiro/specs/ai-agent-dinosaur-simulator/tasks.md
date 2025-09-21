@@ -79,14 +79,14 @@
   - Write integration tests for event-driven agent interactions
   - _Requirements: 1.2, 1.3, 5.6, 7.2_
 
-- [ ] 10. Build Streamlit dashboard foundation
+- [x] 10. Build Streamlit dashboard foundation
   - Create main Streamlit application structure and navigation
   - Implement basic dashboard layout with sidebar and main content areas
   - Add session state management for simulation data
   - Write UI component tests for basic dashboard functionality
   - _Requirements: 4.1, 4.2_
 
-- [ ] 11. Implement dashboard control panel
+- [-] 11. Implement dashboard control panel
   - Create event triggering interface with dropdown menus and parameters
   - Add simulation control buttons (start, pause, stop, reset)
   - Implement real-time status display for simulation state
