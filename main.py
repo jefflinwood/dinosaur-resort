@@ -2,7 +2,7 @@
 
 import streamlit as st
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 import os
 from dotenv import load_dotenv
@@ -507,22 +507,347 @@ def render_agent_monitor(session_manager: SessionStateManager):
     st.title("🤖 Agent Monitor")
     st.write("Real-time agent status and activity monitoring.")
     
-    # Placeholder for future implementation
-    st.info("Agent monitoring functionality will be implemented in task 12.")
-    
+    # Get agents and simulation state
     agents = session_manager.get_agents()
-    if agents:
-        st.write(f"**Total Agents:** {len(agents)}")
-        
-        # Simple agent list (placeholder)
-        for agent_id, agent in agents.items():
-            with st.expander(f"{agent.name} ({agent.role})"):
-                st.write(f"**ID:** {agent_id}")
-                st.write(f"**Role:** {agent.role}")
-                st.write(f"**Location:** {agent.location}")
-                st.write(f"**State:** {agent.current_state}")
-    else:
+    sim_state = session_manager.get_simulation_state()
+    
+    if not agents:
         st.info("No agents to monitor. Start the simulation to see agent activity.")
+        return
+    
+    # Auto-refresh controls
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        st.write(f"**Total Agents:** {len(agents)}")
+    with col2:
+        auto_refresh = st.checkbox("Auto-refresh", value=False, help="Automatically refresh agent data every 5 seconds")
+    with col3:
+        if st.button("🔄 Refresh Now"):
+            st.rerun()
+    
+    # Auto-refresh functionality
+    if auto_refresh:
+        import time
+        time.sleep(5)
+        st.rerun()
+    
+    st.divider()
+    
+    # Agent status overview
+    st.subheader("📊 Agent Status Overview")
+    
+    # Group agents by role for overview
+    agent_roles = {}
+    agent_states = {}
+    for agent in agents.values():
+        role = agent.role.name
+        state = agent.current_state.name
+        
+        if role not in agent_roles:
+            agent_roles[role] = 0
+        agent_roles[role] += 1
+        
+        if state not in agent_states:
+            agent_states[state] = 0
+        agent_states[state] += 1
+    
+    # Display role distribution
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Agents by Role:**")
+        for role, count in agent_roles.items():
+            role_emoji = {
+                'PARK_RANGER': '🌲',
+                'VETERINARIAN': '🩺',
+                'SECURITY': '🛡️',
+                'MAINTENANCE': '🔧',
+                'TOURIST': '🧳',
+                'DINOSAUR': '🦕'
+            }.get(role, '👤')
+            st.write(f"{role_emoji} {role.replace('_', ' ').title()}: {count}")
+    
+    with col2:
+        st.write("**Agents by State:**")
+        for state, count in agent_states.items():
+            state_emoji = {
+                'IDLE': '😴',
+                'ACTIVE': '⚡',
+                'RESPONDING_TO_EVENT': '🔄',
+                'COMMUNICATING': '💬',
+                'UNAVAILABLE': '❌'
+            }.get(state, '❓')
+            st.write(f"{state_emoji} {state.replace('_', ' ').title()}: {count}")
+    
+    st.divider()
+    
+    # Filter and search controls
+    st.subheader("🔍 Agent Filters")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        role_filter = st.selectbox(
+            "Filter by Role",
+            options=["All"] + list(agent_roles.keys()),
+            index=0
+        )
+    
+    with col2:
+        state_filter = st.selectbox(
+            "Filter by State", 
+            options=["All"] + list(agent_states.keys()),
+            index=0
+        )
+    
+    with col3:
+        search_term = st.text_input("Search by Name", placeholder="Enter agent name...")
+    
+    # Filter agents based on selections
+    filtered_agents = {}
+    for agent_id, agent in agents.items():
+        # Role filter
+        if role_filter != "All" and agent.role.name != role_filter:
+            continue
+        
+        # State filter
+        if state_filter != "All" and agent.current_state.name != state_filter:
+            continue
+        
+        # Search filter
+        if search_term and search_term.lower() not in agent.name.lower():
+            continue
+        
+        filtered_agents[agent_id] = agent
+    
+    st.write(f"**Showing {len(filtered_agents)} of {len(agents)} agents**")
+    
+    st.divider()
+    
+    # Real-time agent status display
+    st.subheader("🔴 Real-time Agent Status")
+    
+    # Get agent manager for health information if available
+    agent_health_info = {}
+    if 'simulation_manager' in st.session_state:
+        try:
+            sim_manager = st.session_state['simulation_manager']
+            if hasattr(sim_manager, 'agent_manager') and sim_manager.agent_manager:
+                agent_health_info = sim_manager.agent_manager.check_agent_health()
+        except Exception as e:
+            st.warning(f"Could not retrieve agent health information: {str(e)}")
+    
+    # Display agents in a grid layout
+    if filtered_agents:
+        # Create columns for grid layout (3 agents per row)
+        agents_per_row = 3
+        agent_list = list(filtered_agents.items())
+        
+        for i in range(0, len(agent_list), agents_per_row):
+            cols = st.columns(agents_per_row)
+            
+            for j, (agent_id, agent) in enumerate(agent_list[i:i+agents_per_row]):
+                with cols[j]:
+                    # Agent card
+                    with st.container():
+                        # Agent header with status indicator
+                        health_info = agent_health_info.get(agent_id, {})
+                        health_status = health_info.get('status', 'unknown')
+                        
+                        status_color = {
+                            'healthy': '🟢',
+                            'degraded': '🟡', 
+                            'unhealthy': '🔴',
+                            'unresponsive': '⚫',
+                            'unknown': '⚪'
+                        }.get(health_status, '⚪')
+                        
+                        role_emoji = {
+                            'PARK_RANGER': '🌲',
+                            'VETERINARIAN': '🩺',
+                            'SECURITY': '🛡️',
+                            'MAINTENANCE': '🔧',
+                            'TOURIST': '🧳',
+                            'DINOSAUR': '🦕'
+                        }.get(agent.role.name, '👤')
+                        
+                        st.write(f"**{status_color} {role_emoji} {agent.name}**")
+                        
+                        # Basic info
+                        st.write(f"*{agent.role.name.replace('_', ' ').title()}*")
+                        st.write(f"**State:** {agent.current_state.name.replace('_', ' ').title()}")
+                        st.write(f"**Location:** {agent.location.zone}")
+                        
+                        # Health info if available
+                        if health_info:
+                            st.write(f"**Health:** {health_status.title()}")
+                            if health_info.get('response_count', 0) > 0:
+                                st.write(f"**Responses:** {health_info['response_count']}")
+                        
+                        # Last activity
+                        if hasattr(agent, 'last_activity') and agent.last_activity:
+                            time_diff = datetime.now() - agent.last_activity
+                            if time_diff.total_seconds() < 60:
+                                st.write("**Last Active:** Just now")
+                            elif time_diff.total_seconds() < 3600:
+                                minutes = int(time_diff.total_seconds() / 60)
+                                st.write(f"**Last Active:** {minutes}m ago")
+                            else:
+                                hours = int(time_diff.total_seconds() / 3600)
+                                st.write(f"**Last Active:** {hours}h ago")
+                        
+                        # View details button
+                        if st.button(f"View Details", key=f"details_{agent_id}"):
+                            st.session_state[f"selected_agent_{agent_id}"] = True
+    else:
+        st.info("No agents match the current filters.")
+    
+    st.divider()
+    
+    # Agent location and activity tracking interface
+    st.subheader("📍 Agent Location & Activity Tracking")
+    
+    # Location overview
+    location_zones = {}
+    for agent in filtered_agents.values():
+        zone = agent.location.zone
+        if zone not in location_zones:
+            location_zones[zone] = []
+        location_zones[zone].append(agent)
+    
+    if location_zones:
+        st.write("**Agents by Location:**")
+        
+        for zone, zone_agents in location_zones.items():
+            with st.expander(f"📍 {zone.replace('_', ' ').title()} ({len(zone_agents)} agents)"):
+                for agent in zone_agents:
+                    role_emoji = {
+                        'PARK_RANGER': '🌲',
+                        'VETERINARIAN': '🩺', 
+                        'SECURITY': '🛡️',
+                        'MAINTENANCE': '🔧',
+                        'TOURIST': '🧳',
+                        'DINOSAUR': '🦕'
+                    }.get(agent.role.name, '👤')
+                    
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    with col1:
+                        st.write(f"{role_emoji} **{agent.name}**")
+                    with col2:
+                        st.write(f"*{agent.role.name.replace('_', ' ').title()}*")
+                    with col3:
+                        st.write(f"*{agent.current_state.name.replace('_', ' ').title()}*")
+    
+    st.divider()
+    
+    # Agent conversation history viewer
+    st.subheader("💬 Agent Conversation History")
+    
+    # Agent selection for conversation history
+    if filtered_agents:
+        selected_agent_id = st.selectbox(
+            "Select Agent for Conversation History",
+            options=[""] + list(filtered_agents.keys()),
+            format_func=lambda x: f"{filtered_agents[x].name} ({filtered_agents[x].role.name})" if x else "Select an agent...",
+            key="conversation_agent_select"
+        )
+        
+        if selected_agent_id:
+            selected_agent = filtered_agents[selected_agent_id]
+            st.write(f"**Conversation History for {selected_agent.name}**")
+            
+            # Get conversation history from session state
+            conversation_history = session_manager.get_conversation_history()
+            agent_conversations = conversation_history.get(selected_agent_id, [])
+            
+            # Also try to get from agent manager if available
+            if 'simulation_manager' in st.session_state:
+                try:
+                    sim_manager = st.session_state['simulation_manager']
+                    if hasattr(sim_manager, 'agent_manager') and sim_manager.agent_manager:
+                        agent_manager_conversations = sim_manager.agent_manager.get_agent_conversation_history(selected_agent_id)
+                        if agent_manager_conversations:
+                            agent_conversations.extend(agent_manager_conversations)
+                except Exception as e:
+                    st.warning(f"Could not retrieve agent manager conversations: {str(e)}")
+            
+            if agent_conversations:
+                # Display conversation messages
+                st.write(f"**Total Messages:** {len(agent_conversations)}")
+                
+                # Show recent messages (last 10)
+                recent_messages = agent_conversations[-10:] if len(agent_conversations) > 10 else agent_conversations
+                
+                for i, message in enumerate(reversed(recent_messages)):
+                    with st.expander(f"Message {len(recent_messages) - i} - {message.get('timestamp', 'Unknown time')}"):
+                        st.write(f"**From:** {message.get('sender', 'Unknown')}")
+                        st.write(f"**To:** {message.get('recipient', 'Unknown')}")
+                        st.write(f"**Content:** {message.get('content', message.get('message', 'No content'))}")
+                        
+                        if message.get('event_context'):
+                            st.write(f"**Event Context:** {message['event_context']}")
+                
+                if len(agent_conversations) > 10:
+                    st.info(f"Showing last 10 messages. Total: {len(agent_conversations)} messages.")
+            else:
+                st.info(f"No conversation history available for {selected_agent.name}.")
+    
+    # Detailed agent information modals
+    for agent_id, agent in filtered_agents.items():
+        if st.session_state.get(f"selected_agent_{agent_id}", False):
+            with st.expander(f"🔍 Detailed Information - {agent.name}", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write("**Basic Information:**")
+                    st.write(f"- **ID:** {agent_id}")
+                    st.write(f"- **Name:** {agent.name}")
+                    st.write(f"- **Role:** {agent.role.name.replace('_', ' ').title()}")
+                    st.write(f"- **Current State:** {agent.current_state.name.replace('_', ' ').title()}")
+                    
+                    if agent.species:
+                        st.write(f"- **Species:** {agent.species.name.replace('_', ' ').title()}")
+                    
+                    st.write("**Location:**")
+                    st.write(f"- **Zone:** {agent.location.zone}")
+                    st.write(f"- **Coordinates:** ({agent.location.x:.1f}, {agent.location.y:.1f})")
+                    st.write(f"- **Description:** {agent.location.description}")
+                
+                with col2:
+                    st.write("**Personality Traits:**")
+                    if agent.personality_traits:
+                        for trait, value in agent.personality_traits.items():
+                            st.write(f"- **{trait.replace('_', ' ').title()}:** {value:.2f}")
+                    else:
+                        st.write("- No personality traits defined")
+                    
+                    st.write("**Capabilities:**")
+                    if agent.capabilities:
+                        for capability in agent.capabilities:
+                            st.write(f"- {capability}")
+                    else:
+                        st.write("- No capabilities defined")
+                
+                # Health information if available
+                health_info = agent_health_info.get(agent_id, {})
+                if health_info:
+                    st.write("**Health & Performance:**")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Health Status", health_info.get('status', 'Unknown').title())
+                    with col2:
+                        st.metric("Response Count", health_info.get('response_count', 0))
+                    with col3:
+                        st.metric("Error Count", health_info.get('error_count', 0))
+                    
+                    if health_info.get('last_error'):
+                        st.write(f"**Last Error:** {health_info['last_error']}")
+                
+                # Close button
+                if st.button(f"Close Details", key=f"close_{agent_id}"):
+                    st.session_state[f"selected_agent_{agent_id}"] = False
+                    st.rerun()
 
 
 def render_metrics_dashboard(session_manager: SessionStateManager):
@@ -534,28 +859,749 @@ def render_metrics_dashboard(session_manager: SessionStateManager):
     st.title("📊 Metrics Dashboard")
     st.write("Resort performance metrics and historical trends.")
     
-    # Placeholder for future implementation
-    st.info("Metrics visualization will be implemented in task 13.")
+    # Get metrics manager for advanced functionality
+    metrics_manager = None
+    if 'simulation_manager' in st.session_state:
+        sim_manager = st.session_state['simulation_manager']
+        if hasattr(sim_manager, 'metrics_manager'):
+            metrics_manager = sim_manager.metrics_manager
     
-    # Show current metrics if available
+    # Enhanced control panel
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    with col1:
+        st.write("**Real-time Metrics Dashboard**")
+    with col2:
+        auto_refresh = st.checkbox("Auto-refresh", value=False, help="Automatically refresh metrics every 5 seconds")
+    with col3:
+        refresh_rate = st.selectbox("Refresh Rate", [5, 10, 30, 60], index=0, help="Auto-refresh interval in seconds")
+    with col4:
+        if st.button("🔄 Refresh Now"):
+            st.rerun()
+    
+    # Auto-refresh functionality with configurable rate
+    if auto_refresh:
+        import time
+        time.sleep(refresh_rate)
+        st.rerun()
+    
+    # Get current metrics
     latest_metrics = session_manager.get_latest_metrics()
-    if latest_metrics:
-        col1, col2, col3 = st.columns(3)
+    history = session_manager.get_metrics_history()
+    
+    if not latest_metrics:
+        st.info("No metrics data available yet. Start the simulation to begin tracking metrics.")
+        return
+    
+    st.divider()
+    
+    # Real-time metrics display with current values
+    st.subheader("🔴 Real-time Metrics")
+    
+    # Get metrics summary if metrics manager is available
+    if metrics_manager:
+        try:
+            metrics_summary = metrics_manager.get_metrics_summary()
+        except Exception as e:
+            st.warning(f"Could not get detailed metrics summary: {str(e)}")
+            metrics_summary = None
+    else:
+        metrics_summary = None
+    
+    # Alert system for critical metrics
+    critical_alerts = []
+    if latest_metrics.visitor_satisfaction < 0.3:
+        critical_alerts.append("🚨 Critical: Visitor satisfaction is dangerously low!")
+    if latest_metrics.safety_rating < 0.4:
+        critical_alerts.append("🚨 Critical: Safety rating requires immediate attention!")
+    if latest_metrics.facility_efficiency < 0.3:
+        critical_alerts.append("🚨 Critical: Facility efficiency is critically low!")
+    
+    # Display alerts if any
+    if critical_alerts:
+        st.error("**CRITICAL ALERTS:**")
+        for alert in critical_alerts:
+            st.error(alert)
+        st.divider()
+    
+    # Main metrics display
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        value = latest_metrics.visitor_satisfaction * 100
+        status = metrics_summary['visitor_satisfaction']['status'] if metrics_summary else _get_metric_status(latest_metrics.visitor_satisfaction)
+        delta = _calculate_metric_delta(history, 'visitor_satisfaction') if len(history) > 1 else None
+        
+        st.metric(
+            "👥 Visitor Satisfaction", 
+            f"{value:.1f}%",
+            delta=f"{delta:+.1f}%" if delta else None,
+            help=f"Status: {status}"
+        )
+        
+        # Status indicator
+        status_color = _get_status_color(latest_metrics.visitor_satisfaction)
+        st.markdown(f"<div style='text-align: center; color: {status_color}; font-weight: bold;'>{status}</div>", unsafe_allow_html=True)
+    
+    with col2:
+        value = latest_metrics.safety_rating * 100
+        status = metrics_summary['safety_rating']['status'] if metrics_summary else _get_metric_status(latest_metrics.safety_rating)
+        delta = _calculate_metric_delta(history, 'safety_rating') if len(history) > 1 else None
+        
+        st.metric(
+            "🛡️ Safety Rating", 
+            f"{value:.1f}%",
+            delta=f"{delta:+.1f}%" if delta else None,
+            help=f"Status: {status}"
+        )
+        
+        status_color = _get_status_color(latest_metrics.safety_rating)
+        st.markdown(f"<div style='text-align: center; color: {status_color}; font-weight: bold;'>{status}</div>", unsafe_allow_html=True)
+    
+    with col3:
+        value = latest_metrics.facility_efficiency * 100
+        status = metrics_summary['facility_efficiency']['status'] if metrics_summary else _get_metric_status(latest_metrics.facility_efficiency)
+        delta = _calculate_metric_delta(history, 'facility_efficiency') if len(history) > 1 else None
+        
+        st.metric(
+            "🏭 Facility Efficiency", 
+            f"{value:.1f}%",
+            delta=f"{delta:+.1f}%" if delta else None,
+            help=f"Status: {status}"
+        )
+        
+        status_color = _get_status_color(latest_metrics.facility_efficiency)
+        st.markdown(f"<div style='text-align: center; color: {status_color}; font-weight: bold;'>{status}</div>", unsafe_allow_html=True)
+    
+    with col4:
+        # Overall resort score
+        if metrics_manager:
+            try:
+                overall_score = metrics_manager.calculate_overall_resort_score()
+                value = overall_score * 100
+                status = metrics_summary['overall_score']['status'] if metrics_summary else _get_metric_status(overall_score)
+                
+                st.metric(
+                    "🏆 Overall Score", 
+                    f"{value:.1f}%",
+                    help=f"Weighted average of all metrics - Status: {status}"
+                )
+                
+                status_color = _get_status_color(overall_score)
+                st.markdown(f"<div style='text-align: center; color: {status_color}; font-weight: bold;'>{status}</div>", unsafe_allow_html=True)
+            except Exception as e:
+                st.metric("🏆 Overall Score", "N/A", help="Could not calculate overall score")
+        else:
+            st.metric("🏆 Overall Score", "N/A", help="Metrics manager not available")
+    
+    # Dinosaur happiness overview
+    if latest_metrics.dinosaur_happiness:
+        st.subheader("🦕 Dinosaur Happiness")
+        
+        # Calculate average and show individual dinosaurs
+        avg_happiness = sum(latest_metrics.dinosaur_happiness.values()) / len(latest_metrics.dinosaur_happiness)
+        
+        col1, col2 = st.columns([1, 2])
         
         with col1:
-            st.metric("Visitor Satisfaction", f"{latest_metrics.visitor_satisfaction:.1f}%")
+            st.metric(
+                "Average Happiness", 
+                f"{avg_happiness * 100:.1f}%",
+                help=f"Average across {len(latest_metrics.dinosaur_happiness)} dinosaurs"
+            )
+            
+            status = _get_metric_status(avg_happiness)
+            status_color = _get_status_color(avg_happiness)
+            st.markdown(f"<div style='text-align: center; color: {status_color}; font-weight: bold;'>{status}</div>", unsafe_allow_html=True)
         
         with col2:
-            st.metric("Safety Rating", f"{latest_metrics.safety_rating:.1f}%")
+            # Individual dinosaur happiness
+            st.write("**Individual Dinosaur Status:**")
+            
+            # Create columns for dinosaur display
+            dino_cols = st.columns(min(3, len(latest_metrics.dinosaur_happiness)))
+            
+            for i, (dino_id, happiness) in enumerate(latest_metrics.dinosaur_happiness.items()):
+                col_idx = i % len(dino_cols)
+                with dino_cols[col_idx]:
+                    # Get dinosaur name (simplified from ID)
+                    dino_name = dino_id.split('-')[0] if '-' in dino_id else dino_id
+                    
+                    happiness_pct = happiness * 100
+                    status = _get_metric_status(happiness)
+                    status_color = _get_status_color(happiness)
+                    
+                    st.write(f"**{dino_name}**")
+                    st.progress(happiness)
+                    st.write(f"{happiness_pct:.1f}% - {status}")
+    
+    st.divider()
+    
+    # Enhanced metric filtering and time range selection
+    st.subheader("📈 Historical Trends & Analysis")
+    
+    if len(history) < 2:
+        st.info("Not enough historical data for trend analysis. Metrics will appear here as the simulation runs.")
+        return
+    
+    # Enhanced filter controls
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        time_range = st.selectbox(
+            "Time Range",
+            options=["15m", "1h", "6h", "24h", "7d", "all"],
+            index=1,
+            help="Select time range for historical data"
+        )
+    
+    with col2:
+        metrics_to_show = st.multiselect(
+            "Metrics to Display",
+            options=["Visitor Satisfaction", "Safety Rating", "Facility Efficiency", "Dinosaur Happiness"],
+            default=["Visitor Satisfaction", "Safety Rating"],
+            help="Select which metrics to show in charts"
+        )
+    
+    with col3:
+        chart_type = st.selectbox(
+            "Chart Type",
+            options=["Line Chart", "Area Chart", "Bar Chart", "Scatter Plot"],
+            index=0,
+            help="Select visualization type"
+        )
+    
+    with col4:
+        show_trend_lines = st.checkbox(
+            "Show Trend Lines",
+            value=True,
+            help="Display trend lines on charts"
+        )
+    
+    # Filter historical data by time range
+    filtered_history = _filter_history_by_timerange(history, time_range)
+    
+    if not filtered_history:
+        st.warning(f"No data available for the selected time range ({time_range})")
+        return
+    
+    st.write(f"**Showing {len(filtered_history)} data points over {time_range}**")
+    
+    # Historical metrics charts and trend visualization
+    if metrics_to_show:
+        # Prepare data for visualization
+        chart_data = _prepare_chart_data(filtered_history, metrics_to_show)
         
-        with col3:
-            st.metric("Facility Efficiency", f"{latest_metrics.facility_efficiency:.1f}%")
+        if chart_data is not None and not chart_data.empty:
+            # Display the selected chart type
+            if chart_type == "Line Chart":
+                st.line_chart(chart_data, height=400)
+            elif chart_type == "Area Chart":
+                st.area_chart(chart_data, height=400)
+            elif chart_type == "Bar Chart":
+                st.bar_chart(chart_data, height=400)
+            elif chart_type == "Scatter Plot":
+                st.scatter_chart(chart_data, height=400)
+            
+            # Enhanced trend analysis with correlation matrix
+            if show_trend_lines and len(chart_data.columns) > 1:
+                st.subheader("📊 Correlation Analysis")
+                try:
+                    correlation_matrix = chart_data.corr()
+                    st.write("**Metric Correlations:**")
+                    
+                    # Display correlation insights
+                    for i, metric1 in enumerate(correlation_matrix.columns):
+                        for j, metric2 in enumerate(correlation_matrix.columns):
+                            if i < j:  # Avoid duplicate pairs
+                                corr_value = correlation_matrix.iloc[i, j]
+                                if abs(corr_value) > 0.5:  # Only show significant correlations
+                                    corr_strength = "Strong" if abs(corr_value) > 0.7 else "Moderate"
+                                    corr_direction = "positive" if corr_value > 0 else "negative"
+                                    st.write(f"• **{metric1}** and **{metric2}**: {corr_strength} {corr_direction} correlation ({corr_value:.2f})")
+                except Exception as e:
+                    st.info("Correlation analysis requires multiple metrics with sufficient data.")
+            
+            # Show trend analysis
+            st.subheader("📊 Trend Analysis")
+            
+            trend_col1, trend_col2 = st.columns(2)
+            
+            with trend_col1:
+                st.write("**Recent Trends:**")
+                for metric in metrics_to_show:
+                    metric_key = _get_metric_key(metric)
+                    if metric_key in chart_data.columns:
+                        trend = _calculate_trend(chart_data[metric_key])
+                        trend_icon = "📈" if trend > 0 else "📉" if trend < 0 else "➡️"
+                        trend_text = "Improving" if trend > 0 else "Declining" if trend < 0 else "Stable"
+                        st.write(f"{trend_icon} **{metric}:** {trend_text} ({trend:+.2f}%)")
+            
+            with trend_col2:
+                st.write("**Statistics:**")
+                for metric in metrics_to_show:
+                    metric_key = _get_metric_key(metric)
+                    if metric_key in chart_data.columns:
+                        values = chart_data[metric_key] * 100  # Convert to percentage
+                        st.write(f"**{metric}:**")
+                        st.write(f"  • Min: {values.min():.1f}%")
+                        st.write(f"  • Max: {values.max():.1f}%")
+                        st.write(f"  • Avg: {values.mean():.1f}%")
+                        st.write(f"  • Std Dev: {values.std():.1f}%")
+        else:
+            st.warning("No data available for the selected metrics and time range.")
+    
+    # Advanced metrics analysis section
+    st.divider()
+    st.subheader("🔬 Advanced Analysis")
+    
+    if chart_data is not None and not chart_data.empty:
+        analysis_col1, analysis_col2 = st.columns(2)
         
-        # Metrics history count
-        history = session_manager.get_metrics_history()
-        st.write(f"**Historical Data Points:** {len(history)}")
+        with analysis_col1:
+            st.write("**Performance Insights:**")
+            
+            # Calculate performance insights
+            for metric in metrics_to_show:
+                metric_key = _get_metric_key(metric)
+                if metric_key in chart_data.columns:
+                    values = chart_data[metric_key] * 100
+                    
+                    # Calculate volatility
+                    volatility = values.std()
+                    volatility_level = "High" if volatility > 10 else "Medium" if volatility > 5 else "Low"
+                    
+                    # Calculate recent performance (last 25% of data)
+                    recent_data = values.tail(max(1, len(values) // 4))
+                    recent_avg = recent_data.mean()
+                    overall_avg = values.mean()
+                    
+                    performance_trend = "improving" if recent_avg > overall_avg else "declining" if recent_avg < overall_avg else "stable"
+                    
+                    st.write(f"**{metric}:**")
+                    st.write(f"  • Volatility: {volatility_level} ({volatility:.1f}%)")
+                    st.write(f"  • Recent trend: {performance_trend}")
+                    st.write(f"  • Recent avg: {recent_avg:.1f}% vs Overall: {overall_avg:.1f}%")
+        
+        with analysis_col2:
+            st.write("**Predictive Indicators:**")
+            
+            # Simple predictive analysis
+            for metric in metrics_to_show:
+                metric_key = _get_metric_key(metric)
+                if metric_key in chart_data.columns:
+                    values = chart_data[metric_key] * 100
+                    
+                    # Calculate moving average trend
+                    if len(values) >= 5:
+                        recent_ma = values.tail(5).mean()
+                        earlier_ma = values.head(max(5, len(values) - 5)).mean()
+                        
+                        trend_direction = "📈 Upward" if recent_ma > earlier_ma else "📉 Downward" if recent_ma < earlier_ma else "➡️ Stable"
+                        trend_strength = abs(recent_ma - earlier_ma)
+                        
+                        # Predict next value based on trend
+                        if trend_strength > 1:
+                            predicted_change = (recent_ma - earlier_ma) * 0.5  # Conservative prediction
+                            predicted_value = values.iloc[-1] + predicted_change
+                            predicted_value = max(0, min(100, predicted_value))  # Clamp to 0-100%
+                            
+                            st.write(f"**{metric}:**")
+                            st.write(f"  • Trend: {trend_direction}")
+                            st.write(f"  • Predicted next: {predicted_value:.1f}%")
+                        else:
+                            st.write(f"**{metric}:** Stable trend")
+    
+    # Performance benchmarking section
+    st.divider()
+    st.subheader("🎯 Performance Benchmarks")
+    
+    benchmark_col1, benchmark_col2 = st.columns(2)
+    
+    with benchmark_col1:
+        st.write("**Industry Standards:**")
+        benchmarks = {
+            "Visitor Satisfaction": {"excellent": 85, "good": 70, "acceptable": 50},
+            "Safety Rating": {"excellent": 95, "good": 85, "acceptable": 70},
+            "Facility Efficiency": {"excellent": 90, "good": 75, "acceptable": 60},
+            "Dinosaur Happiness": {"excellent": 80, "good": 65, "acceptable": 50}
+        }
+        
+        for metric in metrics_to_show:
+            if metric in benchmarks:
+                current_value = getattr(latest_metrics, _get_metric_key(metric), 0) * 100
+                bench = benchmarks[metric]
+                
+                if current_value >= bench["excellent"]:
+                    status = "🏆 Excellent"
+                elif current_value >= bench["good"]:
+                    status = "✅ Good"
+                elif current_value >= bench["acceptable"]:
+                    status = "⚠️ Acceptable"
+                else:
+                    status = "❌ Below Standard"
+                
+                st.write(f"**{metric}:** {status}")
+                st.write(f"  Current: {current_value:.1f}% | Target: {bench['excellent']}%")
+    
+    with benchmark_col2:
+        st.write("**Goal Tracking:**")
+        
+        # Allow users to set custom goals
+        if 'custom_goals' not in st.session_state:
+            st.session_state.custom_goals = {}
+        
+        for metric in metrics_to_show:
+            metric_key = _get_metric_key(metric)
+            current_value = getattr(latest_metrics, metric_key, 0) * 100
+            
+            goal_key = f"goal_{metric_key}"
+            if goal_key not in st.session_state.custom_goals:
+                st.session_state.custom_goals[goal_key] = 80.0  # Default goal
+            
+            goal_value = st.number_input(
+                f"{metric} Goal (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=st.session_state.custom_goals[goal_key],
+                step=1.0,
+                key=f"goal_input_{metric_key}"
+            )
+            st.session_state.custom_goals[goal_key] = goal_value
+            
+            # Calculate progress towards goal
+            progress = min(100, (current_value / goal_value) * 100) if goal_value > 0 else 0
+            progress_color = "🟢" if progress >= 100 else "🟡" if progress >= 80 else "🔴"
+            
+            st.write(f"{progress_color} Progress: {progress:.1f}%")
+            st.progress(progress / 100)
+    
+    # Individual dinosaur happiness trends
+    if latest_metrics.dinosaur_happiness and "Dinosaur Happiness" in metrics_to_show:
+        st.subheader("🦕 Individual Dinosaur Trends")
+        
+        # Let user select specific dinosaurs to view
+        selected_dinosaurs = st.multiselect(
+            "Select Dinosaurs",
+            options=list(latest_metrics.dinosaur_happiness.keys()),
+            default=list(latest_metrics.dinosaur_happiness.keys())[:3],  # Default to first 3
+            help="Select specific dinosaurs to view happiness trends"
+        )
+        
+        if selected_dinosaurs and metrics_manager:
+            try:
+                # Create dinosaur happiness chart
+                dino_chart_data = _prepare_dinosaur_chart_data(filtered_history, selected_dinosaurs)
+                
+                if dino_chart_data is not None and not dino_chart_data.empty:
+                    st.line_chart(dino_chart_data, height=300)
+                    
+                    # Show dinosaur-specific statistics
+                    st.write("**Dinosaur Statistics:**")
+                    dino_stats_cols = st.columns(len(selected_dinosaurs))
+                    
+                    for i, dino_id in enumerate(selected_dinosaurs):
+                        with dino_stats_cols[i]:
+                            if dino_id in dino_chart_data.columns:
+                                values = dino_chart_data[dino_id] * 100
+                                dino_name = dino_id.split('-')[0] if '-' in dino_id else dino_id
+                                
+                                st.write(f"**{dino_name}**")
+                                st.write(f"Current: {latest_metrics.dinosaur_happiness[dino_id] * 100:.1f}%")
+                                st.write(f"Min: {values.min():.1f}%")
+                                st.write(f"Max: {values.max():.1f}%")
+                                st.write(f"Avg: {values.mean():.1f}%")
+                else:
+                    st.info("No historical data available for selected dinosaurs.")
+            except Exception as e:
+                st.warning(f"Could not load dinosaur trend data: {str(e)}")
+    
+    # Data export option
+    st.divider()
+    st.subheader("💾 Data Export")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("📊 Export Current Metrics"):
+            try:
+                import json
+                export_data = {
+                    'timestamp': latest_metrics.timestamp.isoformat(),
+                    'visitor_satisfaction': latest_metrics.visitor_satisfaction,
+                    'safety_rating': latest_metrics.safety_rating,
+                    'facility_efficiency': latest_metrics.facility_efficiency,
+                    'dinosaur_happiness': latest_metrics.dinosaur_happiness
+                }
+                
+                st.download_button(
+                    label="Download Current Metrics (JSON)",
+                    data=json.dumps(export_data, indent=2),
+                    file_name=f"metrics_current_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
+            except Exception as e:
+                st.error(f"Failed to export current metrics: {str(e)}")
+    
+    with col2:
+        if st.button("📈 Export Historical Data"):
+            try:
+                import json
+                export_data = []
+                for metrics in filtered_history:
+                    export_data.append({
+                        'timestamp': metrics.timestamp.isoformat(),
+                        'visitor_satisfaction': metrics.visitor_satisfaction,
+                        'safety_rating': metrics.safety_rating,
+                        'facility_efficiency': metrics.facility_efficiency,
+                        'dinosaur_happiness': metrics.dinosaur_happiness
+                    })
+                
+                st.download_button(
+                    label=f"Download Historical Data (JSON)",
+                    data=json.dumps(export_data, indent=2),
+                    file_name=f"metrics_history_{time_range}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
+            except Exception as e:
+                st.error(f"Failed to export historical data: {str(e)}")
+
+
+def _get_metric_status(value: float) -> str:
+    """Get status description for a metric value.
+    
+    Args:
+        value: Metric value (0.0 to 1.0)
+        
+    Returns:
+        Status string
+    """
+    if value >= 0.8:
+        return "Excellent"
+    elif value >= 0.6:
+        return "Good"
+    elif value >= 0.4:
+        return "Fair"
+    elif value >= 0.2:
+        return "Poor"
     else:
-        st.info("No metrics data available yet.")
+        return "Critical"
+
+
+def _get_status_color(value: float) -> str:
+    """Get color for status display.
+    
+    Args:
+        value: Metric value (0.0 to 1.0)
+        
+    Returns:
+        CSS color string
+    """
+    if value >= 0.8:
+        return "#28a745"  # Green
+    elif value >= 0.6:
+        return "#17a2b8"  # Blue
+    elif value >= 0.4:
+        return "#ffc107"  # Yellow
+    elif value >= 0.2:
+        return "#fd7e14"  # Orange
+    else:
+        return "#dc3545"  # Red
+
+
+def _calculate_metric_delta(history: list, metric_name: str) -> Optional[float]:
+    """Calculate the change in a metric from the previous measurement.
+    
+    Args:
+        history: List of MetricsSnapshot objects
+        metric_name: Name of the metric to calculate delta for
+        
+    Returns:
+        Percentage change from previous measurement, or None if not enough data
+    """
+    if len(history) < 2:
+        return None
+    
+    try:
+        # Get the two most recent measurements
+        current = getattr(history[-1], metric_name)
+        previous = getattr(history[-2], metric_name)
+        
+        # Calculate percentage change
+        if previous != 0:
+            delta = ((current - previous) / previous) * 100
+            return delta
+        else:
+            return None
+    except (AttributeError, IndexError):
+        return None
+
+
+def _filter_history_by_timerange(history: list, time_range: str) -> list:
+    """Filter metrics history by time range.
+    
+    Args:
+        history: List of MetricsSnapshot objects
+        time_range: Time range string ('15m', '1h', '6h', '24h', '7d', 'all')
+        
+    Returns:
+        Filtered list of MetricsSnapshot objects
+    """
+    if time_range == 'all' or not history:
+        return history
+    
+    from datetime import timedelta
+    now = datetime.now()
+    
+    if time_range == '15m':
+        cutoff = now - timedelta(minutes=15)
+    elif time_range == '1h':
+        cutoff = now - timedelta(hours=1)
+    elif time_range == '6h':
+        cutoff = now - timedelta(hours=6)
+    elif time_range == '24h':
+        cutoff = now - timedelta(hours=24)
+    elif time_range == '7d':
+        cutoff = now - timedelta(days=7)
+    else:
+        return history
+    
+    return [m for m in history if m.timestamp >= cutoff]
+
+
+def _get_metric_key(metric_display_name: str) -> str:
+    """Convert display name to metric key.
+    
+    Args:
+        metric_display_name: Display name of the metric
+        
+    Returns:
+        Internal metric key name
+    """
+    mapping = {
+        "Visitor Satisfaction": "visitor_satisfaction",
+        "Safety Rating": "safety_rating", 
+        "Facility Efficiency": "facility_efficiency",
+        "Dinosaur Happiness": "dinosaur_happiness"
+    }
+    return mapping.get(metric_display_name, metric_display_name.lower().replace(' ', '_'))
+
+
+def _prepare_chart_data(history: list, metrics_to_show: list):
+    """Prepare data for chart visualization.
+    
+    Args:
+        history: List of MetricsSnapshot objects
+        metrics_to_show: List of metric display names to include
+        
+    Returns:
+        pandas DataFrame with chart data, or None if pandas not available
+    """
+    try:
+        import pandas as pd
+        
+        data = []
+        for metrics in history:
+            row = {'timestamp': metrics.timestamp}
+            
+            for metric_display in metrics_to_show:
+                metric_key = _get_metric_key(metric_display)
+                
+                if metric_key == 'dinosaur_happiness':
+                    # For dinosaur happiness, use average
+                    if metrics.dinosaur_happiness:
+                        avg_happiness = sum(metrics.dinosaur_happiness.values()) / len(metrics.dinosaur_happiness)
+                        row[metric_display] = avg_happiness
+                    else:
+                        row[metric_display] = 0.0
+                else:
+                    # For other metrics, get the value directly
+                    if hasattr(metrics, metric_key):
+                        row[metric_display] = getattr(metrics, metric_key)
+            
+            data.append(row)
+        
+        df = pd.DataFrame(data)
+        if not df.empty:
+            df.set_index('timestamp', inplace=True)
+        
+        return df
+        
+    except ImportError:
+        # Fallback if pandas is not available
+        st.warning("Pandas not available for advanced charting. Install pandas for better visualization.")
+        return None
+    except Exception as e:
+        st.error(f"Error preparing chart data: {str(e)}")
+        return None
+
+
+def _prepare_dinosaur_chart_data(history: list, selected_dinosaurs: list):
+    """Prepare dinosaur-specific chart data.
+    
+    Args:
+        history: List of MetricsSnapshot objects
+        selected_dinosaurs: List of dinosaur IDs to include
+        
+    Returns:
+        pandas DataFrame with dinosaur happiness data, or None if not available
+    """
+    try:
+        import pandas as pd
+        
+        data = []
+        for metrics in history:
+            row = {'timestamp': metrics.timestamp}
+            
+            for dino_id in selected_dinosaurs:
+                if dino_id in metrics.dinosaur_happiness:
+                    # Use simplified name for display
+                    dino_name = dino_id.split('-')[0] if '-' in dino_id else dino_id
+                    row[dino_name] = metrics.dinosaur_happiness[dino_id]
+            
+            # Only add row if it has dinosaur data
+            if len(row) > 1:
+                data.append(row)
+        
+        df = pd.DataFrame(data)
+        if not df.empty:
+            df.set_index('timestamp', inplace=True)
+        
+        return df
+        
+    except ImportError:
+        st.warning("Pandas not available for dinosaur trend charts.")
+        return None
+    except Exception as e:
+        st.error(f"Error preparing dinosaur chart data: {str(e)}")
+        return None
+
+
+def _calculate_trend(values) -> float:
+    """Calculate trend direction for a series of values.
+    
+    Args:
+        values: Series of metric values
+        
+    Returns:
+        Trend percentage (positive = improving, negative = declining)
+    """
+    try:
+        if len(values) < 2:
+            return 0.0
+        
+        # Simple trend calculation: compare first half to second half
+        mid_point = len(values) // 2
+        first_half_avg = values[:mid_point].mean()
+        second_half_avg = values[mid_point:].mean()
+        
+        if first_half_avg != 0:
+            trend = ((second_half_avg - first_half_avg) / first_half_avg) * 100
+            return trend
+        else:
+            return 0.0
+            
+    except Exception:
+        return 0.0
 
 
 def render_event_log(session_manager: SessionStateManager):

@@ -93,19 +93,21 @@
   - Write UI tests for control panel interactions
   - _Requirements: 4.4, 1.1_
 
-- [ ] 12. Create agent monitoring dashboard
+- [x] 12. Create agent monitoring dashboard
   - Implement real-time agent status display with current states
   - Add agent conversation history viewer
   - Create agent location and activity tracking interface
   - Write UI tests for agent monitoring features
   - _Requirements: 4.3, 6.5_
 
-- [ ] 13. Build metrics visualization dashboard
+- [-] 13. Build metrics visualization dashboard
   - Create real-time metrics display with current values
   - Implement historical metrics charts and trend visualization
   - Add metric filtering and time range selection
-  - Write UI tests for metrics dashboard functionality
   - _Requirements: 4.6, 3.6_
+
+- [ ] 13.5 Build Metrics Tests
+  - Write UI tests for metrics dashboard functionality
 
 - [ ] 14. Implement event logging and history interface
   - Create event log display with chronological event history

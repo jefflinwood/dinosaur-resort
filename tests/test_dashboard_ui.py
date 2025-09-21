@@ -409,7 +409,6 @@ class TestDashboardUI:
         # Check basic elements
         mock_streamlit.title.assert_called_with("🤖 Agent Monitor")
         mock_streamlit.write.assert_called()
-        mock_streamlit.info.assert_called()
         
         # Verify agents are retrieved
         self.mock_session_manager.get_agents.assert_called_once()
@@ -419,8 +418,9 @@ class TestDashboardUI:
         render_agent_monitor(self.mock_session_manager)
         
         # Should display agent information
-        mock_streamlit.expander.assert_called()
         mock_streamlit.write.assert_called()
+        mock_streamlit.columns.assert_called()
+        mock_streamlit.subheader.assert_called()
     
     def test_render_agent_monitor_no_agents(self):
         """Test agent monitor handles no agents."""
@@ -430,6 +430,228 @@ class TestDashboardUI:
         
         # Should display info message
         mock_streamlit.info.assert_called()
+    
+    def test_render_agent_monitor_status_overview(self):
+        """Test agent monitor displays status overview correctly."""
+        # Add multiple agents with different roles and states
+        self.mock_agents = {
+            "agent1": Agent(
+                id="agent1",
+                name="Test Ranger",
+                role=AgentRole.PARK_RANGER,
+                personality_traits={"courage": 0.8},
+                current_state=AgentState.IDLE,
+                location=Location(x=0.0, y=0.0, zone="visitor_center", description="Visitor Center"),
+                capabilities=["emergency_response"]
+            ),
+            "agent2": Agent(
+                id="agent2",
+                name="Test Vet",
+                role=AgentRole.VETERINARIAN,
+                personality_traits={"empathy": 0.9},
+                current_state=AgentState.ACTIVE,
+                location=Location(x=50.0, y=50.0, zone="medical_center", description="Medical Center"),
+                capabilities=["medical_treatment"]
+            ),
+            "agent3": Agent(
+                id="agent3",
+                name="Test Tourist",
+                role=AgentRole.TOURIST,
+                personality_traits={"curiosity": 0.7},
+                current_state=AgentState.RESPONDING_TO_EVENT,
+                location=Location(x=100.0, y=100.0, zone="main_area", description="Main Area"),
+                capabilities=["observation"]
+            )
+        }
+        self.mock_session_manager.get_agents.return_value = self.mock_agents
+        
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display role and state distributions
+        mock_streamlit.subheader.assert_called()
+        mock_streamlit.write.assert_called()
+        mock_streamlit.columns.assert_called()
+    
+    def test_render_agent_monitor_filters(self):
+        """Test agent monitor filter functionality."""
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display filter controls
+        mock_streamlit.selectbox.assert_called()
+        mock_streamlit.text_input.assert_called()
+    
+    def test_render_agent_monitor_auto_refresh(self):
+        """Test agent monitor auto-refresh functionality."""
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display auto-refresh checkbox
+        mock_streamlit.checkbox.assert_called()
+        mock_streamlit.button.assert_called()
+    
+    def test_render_agent_monitor_real_time_status(self):
+        """Test agent monitor real-time status display."""
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display agent status information
+        mock_streamlit.subheader.assert_called()
+        mock_streamlit.write.assert_called()
+        mock_streamlit.columns.assert_called()
+    
+    def test_render_agent_monitor_location_tracking(self):
+        """Test agent monitor location tracking interface."""
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display location tracking section
+        mock_streamlit.subheader.assert_called()
+        mock_streamlit.write.assert_called()
+    
+    def test_render_agent_monitor_conversation_history(self):
+        """Test agent monitor conversation history viewer."""
+        # Mock conversation history
+        self.mock_session_manager.get_conversation_history.return_value = {
+            "agent1": [
+                {
+                    "timestamp": "2024-01-01T12:00:00",
+                    "sender": "System",
+                    "recipient": "agent1",
+                    "content": "Test message",
+                    "event_context": {"event_id": "event1"}
+                }
+            ]
+        }
+        
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display conversation history section
+        mock_streamlit.subheader.assert_called()
+        mock_streamlit.selectbox.assert_called()
+        # Note: get_conversation_history is only called when an agent is selected
+    
+    def test_render_agent_monitor_detailed_information(self):
+        """Test agent monitor detailed information display."""
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should handle detailed agent information
+        mock_streamlit.columns.assert_called()
+        mock_streamlit.write.assert_called()
+        mock_streamlit.button.assert_called()
+    
+    def test_render_agent_monitor_health_information(self):
+        """Test agent monitor displays health information when available."""
+        # Mock session state with simulation manager
+        mock_streamlit.session_state = {
+            'simulation_manager': Mock()
+        }
+        mock_sim_manager = mock_streamlit.session_state['simulation_manager']
+        mock_sim_manager.agent_manager = Mock()
+        mock_sim_manager.agent_manager.check_agent_health.return_value = {
+            "agent1": {
+                "status": "healthy",
+                "response_count": 5,
+                "error_count": 0,
+                "communication_failures": 0,
+                "last_response_time": "2024-01-01T12:00:00",
+                "time_since_response": 30.0
+            }
+        }
+        
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display health information in agent cards
+        mock_streamlit.write.assert_called()
+        mock_streamlit.columns.assert_called()
+    
+    def test_render_agent_monitor_error_handling(self):
+        """Test agent monitor handles errors gracefully."""
+        # Mock session manager to raise exception for health check
+        mock_streamlit.session_state = {
+            'simulation_manager': Mock()
+        }
+        mock_sim_manager = mock_streamlit.session_state['simulation_manager']
+        mock_sim_manager.agent_manager = Mock()
+        mock_sim_manager.agent_manager.check_agent_health.side_effect = Exception("Health check failed")
+        
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should handle error gracefully and display warning
+        mock_streamlit.warning.assert_called()
+    
+    def test_render_agent_monitor_filter_by_role(self):
+        """Test agent monitor role filtering."""
+        # Create agents with different roles
+        self.mock_agents = {
+            "ranger1": Agent(
+                id="ranger1",
+                name="Ranger 1",
+                role=AgentRole.PARK_RANGER,
+                personality_traits={},
+                current_state=AgentState.IDLE,
+                location=Location(x=0.0, y=0.0, zone="visitor_center", description="Visitor Center"),
+                capabilities=[]
+            ),
+            "vet1": Agent(
+                id="vet1",
+                name="Vet 1",
+                role=AgentRole.VETERINARIAN,
+                personality_traits={},
+                current_state=AgentState.ACTIVE,
+                location=Location(x=0.0, y=0.0, zone="medical_center", description="Medical Center"),
+                capabilities=[]
+            )
+        }
+        self.mock_session_manager.get_agents.return_value = self.mock_agents
+        
+        # Mock selectbox to return specific role filter
+        mock_streamlit.selectbox.return_value = "PARK_RANGER"
+        
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should filter agents by role
+        mock_streamlit.selectbox.assert_called()
+        mock_streamlit.write.assert_called()
+    
+    def test_render_agent_monitor_filter_by_state(self):
+        """Test agent monitor state filtering."""
+        # Mock selectbox to return specific state filter
+        mock_streamlit.selectbox.return_value = "IDLE"
+        
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should filter agents by state
+        mock_streamlit.selectbox.assert_called()
+        mock_streamlit.write.assert_called()
+    
+    def test_render_agent_monitor_search_by_name(self):
+        """Test agent monitor name search functionality."""
+        # Mock text input to return search term
+        mock_streamlit.text_input.return_value = "Test"
+        
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should filter agents by name
+        mock_streamlit.text_input.assert_called()
+        mock_streamlit.write.assert_called()
+    
+    def test_render_agent_monitor_conversation_history_empty(self):
+        """Test agent monitor handles empty conversation history."""
+        # Mock empty conversation history
+        self.mock_session_manager.get_conversation_history.return_value = {}
+        
+        # Mock agent selection
+        mock_streamlit.selectbox.return_value = "agent1"
+        
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display info message for empty history
+        mock_streamlit.info.assert_called()
+    
+    def test_render_agent_monitor_conversation_interface(self):
+        """Test agent monitor displays conversation interface."""
+        render_agent_monitor(self.mock_session_manager)
+        
+        # Should display conversation history interface
+        mock_streamlit.selectbox.assert_called()
+        mock_streamlit.subheader.assert_called()
     
     def test_render_metrics_dashboard(self):
         """Test metrics dashboard renders correctly."""
