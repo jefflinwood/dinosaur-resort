@@ -180,12 +180,14 @@ def render_dashboard_overview(session_manager: SessionStateManager):
     
     # Recent activity
     st.subheader("📝 Recent Activity")
-    events = session_manager.get_events()
     
+    # Combine events and agent communications for a comprehensive activity feed
+    activity_items = []
+    
+    # Add recent events
+    events = session_manager.get_events()
     if events:
-        # Show last 5 events
-        recent_events = sorted(events, key=lambda x: x.timestamp, reverse=True)[:5]
-        
+        recent_events = sorted(events, key=lambda x: x.timestamp, reverse=True)[:3]
         for event in recent_events:
             status_icon = {
                 'PENDING': '⏳',
@@ -194,7 +196,35 @@ def render_dashboard_overview(session_manager: SessionStateManager):
                 'FAILED': '❌'
             }.get(event.resolution_status.name, '❓')
             
-            st.write(f"{status_icon} **{event.type.value}** - {event.timestamp.strftime('%H:%M:%S')}")
+            activity_items.append({
+                'timestamp': event.timestamp,
+                'type': 'event',
+                'content': f"{status_icon} **{event.type.value}** - {event.timestamp.strftime('%H:%M:%S')}"
+            })
+    
+    # Add recent agent communications
+    conversation_history = session_manager.get_conversation_history()
+    if conversation_history:
+        for agent_id, messages in conversation_history.items():
+            for msg in messages[-2:]:  # Last 2 messages per agent
+                try:
+                    msg_time = datetime.fromisoformat(msg.get('timestamp', '').replace('Z', '+00:00'))
+                    agent_name = agents.get(agent_id, {}).get('name', agent_id) if agent_id in agents else agent_id
+                    
+                    activity_items.append({
+                        'timestamp': msg_time,
+                        'type': 'communication',
+                        'content': f"💬 **{agent_name}** responded - {msg_time.strftime('%H:%M:%S')}"
+                    })
+                except (ValueError, AttributeError):
+                    # Skip messages with invalid timestamps
+                    continue
+    
+    # Sort all activity by timestamp and show recent items
+    if activity_items:
+        activity_items.sort(key=lambda x: x['timestamp'], reverse=True)
+        for item in activity_items[:5]:
+            st.write(item['content'])
     else:
         st.info("No recent activity. Trigger events to see them here.")
 
@@ -498,6 +528,16 @@ def render_control_panel(session_manager: SessionStateManager):
                 st.write(f"**Location:** {zone} - {location_description}")
                 st.write(f"**Parameters:** {filtered_parameters}")
             
+            # Force a real-time sync to capture agent responses
+            try:
+                from utils.real_time_sync import create_real_time_sync_context
+                sync_context = create_real_time_sync_context(session_manager)
+                sync_results = sync_context["synchronizer"].sync_simulation_data(sim_manager)
+                if sync_results.get("data_updated"):
+                    st.info("🔄 Agent responses will appear in the Agent Monitor shortly...")
+            except Exception as sync_error:
+                st.warning(f"Real-time sync issue: {str(sync_error)}")
+            
             # Auto-refresh to show updated status
             st.rerun()
             
@@ -558,10 +598,17 @@ def render_agent_monitor(session_manager: SessionStateManager):
     
     # Apply real-time updates for agent monitoring
     try:
-        from utils.real_time_sync import apply_real_time_updates
+        from utils.real_time_sync import apply_real_time_updates, create_real_time_sync_context
+        
+        # Force sync to capture latest agent conversations
+        if 'simulation_manager' in st.session_state:
+            sim_manager = st.session_state['simulation_manager']
+            if sim_manager and sim_manager.is_running():
+                sync_context = create_real_time_sync_context(session_manager)
+                sync_results = sync_context["synchronizer"].sync_simulation_data(sim_manager)
         
         # Check if component should refresh (more frequent for agent monitoring)
-        should_refresh = apply_real_time_updates("agent_monitor", session_manager, refresh_interval=10)
+        should_refresh = apply_real_time_updates("agent_monitor", session_manager, refresh_interval=5)  # Even more frequent
         
         # Auto-refresh if needed
         if should_refresh and st.session_state.get('global_auto_refresh', False):
@@ -583,7 +630,7 @@ def render_agent_monitor(session_manager: SessionStateManager):
         return
     
     # Auto-refresh controls
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     with col1:
         st.write(f"**Total Agents:** {len(agents)}")
     with col2:
@@ -591,6 +638,22 @@ def render_agent_monitor(session_manager: SessionStateManager):
     with col3:
         if st.button("🔄 Refresh Now"):
             st.rerun()
+    with col4:
+        if st.button("💬 Sync Conversations"):
+            try:
+                from utils.real_time_sync import create_real_time_sync_context
+                if 'simulation_manager' in st.session_state:
+                    sim_manager = st.session_state['simulation_manager']
+                    if sim_manager:
+                        sync_context = create_real_time_sync_context(session_manager)
+                        sync_results = sync_context["synchronizer"].sync_simulation_data(sim_manager)
+                        if sync_results.get("data_updated"):
+                            st.success("✅ Conversations synced!")
+                        else:
+                            st.info("ℹ️ No new conversations")
+                        st.rerun()
+            except Exception as e:
+                st.error(f"Sync failed: {str(e)}")
     
     # Auto-refresh functionality
     if auto_refresh:
@@ -807,13 +870,63 @@ def render_agent_monitor(session_manager: SessionStateManager):
     
     st.divider()
     
+    # Real-time conversation feed
+    st.subheader("💬 Live Agent Communications")
+    
+    # Debug information
+    if st.checkbox("Show Debug Info", key="agent_debug"):
+        if 'simulation_manager' in st.session_state:
+            sim_manager = st.session_state['simulation_manager']
+            if hasattr(sim_manager, 'agent_manager') and sim_manager.agent_manager:
+                agent_conversations = sim_manager.agent_manager.get_agent_conversations()
+                st.write(f"**Agent Manager Conversations:** {len(agent_conversations)}")
+                if agent_conversations:
+                    with st.expander("Raw Agent Manager Data"):
+                        st.json(agent_conversations[-3:])  # Show last 3
+        
+        session_conversations = session_manager.get_conversation_history()
+        st.write(f"**Session State Conversations:** {len(session_conversations)} agents")
+        for agent_id, messages in session_conversations.items():
+            st.write(f"  - {agent_id}: {len(messages)} messages")
+    
+    # Show recent conversations across all agents
+    conversation_history = session_manager.get_conversation_history()
+    if conversation_history:
+        # Get all recent messages (last 10 across all agents)
+        all_messages = []
+        for agent_id, messages in conversation_history.items():
+            for msg in messages[-5:]:  # Last 5 messages per agent
+                msg_with_agent = msg.copy()
+                msg_with_agent['agent_id'] = agent_id
+                msg_with_agent['agent_name'] = filtered_agents.get(agent_id, {}).get('name', agent_id) if agent_id in filtered_agents else agent_id
+                all_messages.append(msg_with_agent)
+        
+        # Sort by timestamp
+        all_messages.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        # Display recent messages
+        if all_messages:
+            st.write("**Recent Agent Communications:**")
+            for msg in all_messages[:10]:  # Show last 10 messages
+                with st.expander(f"🤖 {msg.get('agent_name', 'Unknown')} - {msg.get('timestamp', 'Unknown time')[:19]}"):
+                    st.write(f"**Agent:** {msg.get('agent_name', 'Unknown')}")
+                    st.write(f"**Message:** {msg.get('content', 'No content')}")
+                    if msg.get('event_context', {}).get('event_id'):
+                        st.write(f"**Event:** {msg['event_context']['event_id'][:8]}... ({msg['event_context'].get('event_type', 'Unknown')})")
+        else:
+            st.info("No recent agent communications. Agents will appear here when they respond to events.")
+    else:
+        st.info("No agent communications yet. Start the simulation and trigger events to see agent responses.")
+    
+    st.divider()
+    
     # Agent conversation history viewer
-    st.subheader("💬 Agent Conversation History")
+    st.subheader("📜 Agent Conversation History")
     
     # Agent selection for conversation history
     if filtered_agents:
         selected_agent_id = st.selectbox(
-            "Select Agent for Conversation History",
+            "Select Agent for Detailed History",
             options=[""] + list(filtered_agents.keys()),
             format_func=lambda x: f"{filtered_agents[x].name} ({filtered_agents[x].role.name})" if x else "Select an agent...",
             key="conversation_agent_select"

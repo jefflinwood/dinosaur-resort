@@ -96,6 +96,56 @@ class RealTimeDataSynchronizer:
                 except Exception as e:
                     sync_results["errors"].append(f"Failed to sync agent states: {str(e)}")
                 
+                # Sync agent conversations
+                try:
+                    if hasattr(simulation_manager, 'agent_manager') and simulation_manager.agent_manager:
+                        # Get all conversation history from agent manager
+                        all_conversations = simulation_manager.agent_manager.get_agent_conversations()
+                        
+                        if all_conversations:
+                            # Get existing conversation history to avoid duplicates
+                            existing_conversations = self.session_manager.get_conversation_history()
+                            
+                            # Track if we added any new conversations
+                            new_conversations_added = False
+                            
+                            # Process and add new conversations to session state
+                            for conv_record in all_conversations:
+                                conv_timestamp = conv_record.get('timestamp')
+                                conv_event_id = conv_record.get('event_id')
+                                
+                                # Extract individual agent responses and add them to session state
+                                if 'individual_responses' in conv_record:
+                                    for agent_id, response in conv_record['individual_responses'].items():
+                                        # Check if this message already exists
+                                        agent_messages = existing_conversations.get(agent_id, [])
+                                        message_exists = any(
+                                            msg.get('timestamp') == conv_timestamp and 
+                                            msg.get('event_context', {}).get('event_id') == conv_event_id and
+                                            msg.get('content') == response
+                                            for msg in agent_messages
+                                        )
+                                        
+                                        if not message_exists:
+                                            message = {
+                                                'timestamp': conv_timestamp or datetime.now().isoformat(),
+                                                'sender': agent_id,
+                                                'recipient': 'system',
+                                                'content': response,
+                                                'event_context': {
+                                                    'event_id': conv_event_id,
+                                                    'event_type': conv_record.get('event_type')
+                                                }
+                                            }
+                                            self.session_manager.add_conversation_message(agent_id, message)
+                                            new_conversations_added = True
+                            
+                            if new_conversations_added:
+                                sync_results["components_synced"].append("agent_conversations")
+                                sync_results["data_updated"] = True
+                except Exception as e:
+                    sync_results["errors"].append(f"Failed to sync agent conversations: {str(e)}")
+                
                 # Sync metrics
                 try:
                     current_metrics = simulation_manager.get_current_metrics()
