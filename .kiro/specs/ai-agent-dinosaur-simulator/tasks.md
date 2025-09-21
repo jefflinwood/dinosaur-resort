@@ -36,22 +36,22 @@
   - Write unit tests for agent creation and OpenAI integration
   - _Requirements: 6.1, 2.1, 2.3_
 
-- [ ] 6. Implement specific agent types and personalities
-- [ ] 6.1 Create staff agent implementations
+- [x] 6. Implement specific agent types and personalities
+- [x] 6.1 Create staff agent implementations
   - Implement park ranger, veterinarian, security, and maintenance agent classes
   - Define staff-specific behaviors and decision-making logic
   - Add staff agent capabilities and response patterns
   - Write unit tests for staff agent behaviors
   - _Requirements: 2.5, 2.3_
 
-- [ ] 6.2 Create visitor agent implementations
+- [x] 6.2 Create visitor agent implementations
   - Implement tourist agent classes with varying personality traits
   - Define visitor behaviors, preferences, and risk tolerance
   - Add visitor satisfaction response mechanisms
   - Write unit tests for visitor agent interactions
   - _Requirements: 2.6, 2.3, 3.1_
 
-- [ ] 6.3 Create dinosaur agent implementations
+- [x] 6.3 Create dinosaur agent implementations
   - Implement different dinosaur species with unique behaviors
   - Define dinosaur happiness factors and response patterns
   - Add dinosaur health and mood tracking
