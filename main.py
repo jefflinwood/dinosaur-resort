@@ -1605,40 +1605,462 @@ def _calculate_trend(values) -> float:
 
 
 def render_event_log(session_manager: SessionStateManager):
-    """Render the event log page.
+    """Render the event log page with comprehensive event history and filtering.
     
     Args:
         session_manager: Session state manager instance
     """
     st.title("📝 Event Log")
-    st.write("Event history and resolution tracking.")
+    st.write("Comprehensive event history and resolution tracking.")
     
-    # Placeholder for future implementation
-    st.info("Event logging interface will be implemented in task 14.")
-    
+    # Get all events
     events = session_manager.get_events()
-    if events:
+    
+    if not events:
+        st.info("No events logged yet. Trigger events from the Control Panel to see them here.")
+        return
+    
+    # Auto-refresh controls
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
         st.write(f"**Total Events:** {len(events)}")
+    with col2:
+        auto_refresh = st.checkbox("Auto-refresh", value=False, help="Automatically refresh event data every 10 seconds")
+    with col3:
+        if st.button("🔄 Refresh Now"):
+            st.rerun()
+    
+    # Auto-refresh functionality
+    if auto_refresh:
+        import time
+        time.sleep(10)
+        st.rerun()
+    
+    st.divider()
+    
+    # Event statistics overview
+    st.subheader("📊 Event Statistics")
+    
+    # Calculate statistics
+    event_types = {}
+    resolution_statuses = {}
+    severity_distribution = {'Low (1-3)': 0, 'Medium (4-6)': 0, 'High (7-8)': 0, 'Critical (9-10)': 0}
+    
+    for event in events:
+        # Event types
+        event_type = event.type.name
+        if event_type not in event_types:
+            event_types[event_type] = 0
+        event_types[event_type] += 1
         
-        # Simple event list (placeholder)
-        for event in sorted(events, key=lambda x: x.timestamp, reverse=True):
-            status_icon = {
+        # Resolution statuses
+        status = event.resolution_status.name
+        if status not in resolution_statuses:
+            resolution_statuses[status] = 0
+        resolution_statuses[status] += 1
+        
+        # Severity distribution
+        if 1 <= event.severity <= 3:
+            severity_distribution['Low (1-3)'] += 1
+        elif 4 <= event.severity <= 6:
+            severity_distribution['Medium (4-6)'] += 1
+        elif 7 <= event.severity <= 8:
+            severity_distribution['High (7-8)'] += 1
+        else:
+            severity_distribution['Critical (9-10)'] += 1
+    
+    # Display statistics in columns
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.write("**Events by Type:**")
+        for event_type, count in sorted(event_types.items()):
+            type_emoji = {
+                'DINOSAUR_ESCAPE': '🦕',
+                'DINOSAUR_ILLNESS': '🤒',
+                'DINOSAUR_AGGRESSIVE': '😡',
+                'VISITOR_INJURY': '🩹',
+                'VISITOR_COMPLAINT': '😤',
+                'VISITOR_EMERGENCY': '🚨',
+                'FACILITY_POWER_OUTAGE': '⚡',
+                'FACILITY_EQUIPMENT_FAILURE': '🔧',
+                'WEATHER_STORM': '⛈️',
+                'WEATHER_EXTREME_TEMPERATURE': '🌡️',
+                'CUSTOM': '⚙️'
+            }.get(event_type, '📋')
+            st.write(f"{type_emoji} {event_type.replace('_', ' ').title()}: {count}")
+    
+    with col2:
+        st.write("**Resolution Status:**")
+        for status, count in sorted(resolution_statuses.items()):
+            status_emoji = {
                 'PENDING': '⏳',
                 'IN_PROGRESS': '🔄',
                 'RESOLVED': '✅',
+                'ESCALATED': '⚠️',
                 'FAILED': '❌'
-            }.get(event.resolution_status.name, '❓')
-            
-            with st.expander(f"{status_icon} {event.type.value} - {event.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"):
-                st.write(f"**ID:** {event.id}")
-                st.write(f"**Type:** {event.type.value}")
-                st.write(f"**Severity:** {event.severity}")
-                st.write(f"**Status:** {event.resolution_status.name}")
-                st.write(f"**Location:** {event.location}")
-                if event.affected_agents:
-                    st.write(f"**Affected Agents:** {', '.join(event.affected_agents)}")
+            }.get(status, '❓')
+            st.write(f"{status_emoji} {status.replace('_', ' ').title()}: {count}")
+    
+    with col3:
+        st.write("**Severity Distribution:**")
+        for severity_range, count in severity_distribution.items():
+            severity_emoji = {
+                'Low (1-3)': '🟢',
+                'Medium (4-6)': '🟡',
+                'High (7-8)': '🟠',
+                'Critical (9-10)': '🔴'
+            }.get(severity_range, '⚪')
+            st.write(f"{severity_emoji} {severity_range}: {count}")
+    
+    st.divider()
+    
+    # Event filtering and search functionality
+    st.subheader("🔍 Event Filters & Search")
+    
+    # Filter controls
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        # Event type filter
+        event_type_options = ["All"] + sorted(list(event_types.keys()))
+        selected_event_type = st.selectbox(
+            "Filter by Type",
+            options=event_type_options,
+            index=0
+        )
+    
+    with col2:
+        # Resolution status filter
+        status_options = ["All"] + sorted(list(resolution_statuses.keys()))
+        selected_status = st.selectbox(
+            "Filter by Status",
+            options=status_options,
+            index=0
+        )
+    
+    with col3:
+        # Severity filter
+        severity_options = ["All", "Low (1-3)", "Medium (4-6)", "High (7-8)", "Critical (9-10)"]
+        selected_severity = st.selectbox(
+            "Filter by Severity",
+            options=severity_options,
+            index=0
+        )
+    
+    with col4:
+        # Time range filter
+        time_range_options = ["All Time", "Last Hour", "Last 6 Hours", "Last 24 Hours", "Last Week"]
+        selected_time_range = st.selectbox(
+            "Time Range",
+            options=time_range_options,
+            index=0
+        )
+    
+    # Search functionality
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        search_term = st.text_input(
+            "Search Events",
+            placeholder="Search by event ID, description, location, or affected agents...",
+            help="Search across event IDs, descriptions, locations, and affected agent names"
+        )
+    
+    with col2:
+        # Sort options
+        sort_options = ["Newest First", "Oldest First", "Severity High to Low", "Severity Low to High"]
+        selected_sort = st.selectbox("Sort By", options=sort_options, index=0)
+    
+    # Apply filters
+    filtered_events = []
+    current_time = datetime.now()
+    
+    for event in events:
+        # Event type filter
+        if selected_event_type != "All" and event.type.name != selected_event_type:
+            continue
+        
+        # Status filter
+        if selected_status != "All" and event.resolution_status.name != selected_status:
+            continue
+        
+        # Severity filter
+        if selected_severity != "All":
+            if selected_severity == "Low (1-3)" and not (1 <= event.severity <= 3):
+                continue
+            elif selected_severity == "Medium (4-6)" and not (4 <= event.severity <= 6):
+                continue
+            elif selected_severity == "High (7-8)" and not (7 <= event.severity <= 8):
+                continue
+            elif selected_severity == "Critical (9-10)" and not (9 <= event.severity <= 10):
+                continue
+        
+        # Time range filter
+        if selected_time_range != "All Time":
+            time_diff = current_time - event.timestamp
+            if selected_time_range == "Last Hour" and time_diff.total_seconds() > 3600:
+                continue
+            elif selected_time_range == "Last 6 Hours" and time_diff.total_seconds() > 21600:
+                continue
+            elif selected_time_range == "Last 24 Hours" and time_diff.total_seconds() > 86400:
+                continue
+            elif selected_time_range == "Last Week" and time_diff.days > 7:
+                continue
+        
+        # Search filter
+        if search_term:
+            search_lower = search_term.lower()
+            searchable_text = f"{event.id} {event.description} {event.location.zone} {event.location.description} {' '.join(event.affected_agents)}".lower()
+            if search_lower not in searchable_text:
+                continue
+        
+        filtered_events.append(event)
+    
+    # Apply sorting
+    if selected_sort == "Newest First":
+        filtered_events.sort(key=lambda x: x.timestamp, reverse=True)
+    elif selected_sort == "Oldest First":
+        filtered_events.sort(key=lambda x: x.timestamp)
+    elif selected_sort == "Severity High to Low":
+        filtered_events.sort(key=lambda x: x.severity, reverse=True)
+    elif selected_sort == "Severity Low to High":
+        filtered_events.sort(key=lambda x: x.severity)
+    
+    st.write(f"**Showing {len(filtered_events)} of {len(events)} events**")
+    
+    st.divider()
+    
+    # Chronological event history display
+    st.subheader("📋 Event History")
+    
+    if not filtered_events:
+        st.info("No events match the current filters. Try adjusting your search criteria.")
+        return
+    
+    # Pagination for large event lists
+    events_per_page = 10
+    total_pages = (len(filtered_events) + events_per_page - 1) // events_per_page
+    
+    if total_pages > 1:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            current_page = st.selectbox(
+                "Page",
+                options=list(range(1, total_pages + 1)),
+                index=0,
+                format_func=lambda x: f"Page {x} of {total_pages}"
+            )
+        
+        start_idx = (current_page - 1) * events_per_page
+        end_idx = min(start_idx + events_per_page, len(filtered_events))
+        page_events = filtered_events[start_idx:end_idx]
     else:
-        st.info("No events logged yet. Trigger events to see them here.")
+        page_events = filtered_events
+    
+    # Display events with detailed information and progress indicators
+    for event in page_events:
+        # Event status indicators
+        status_icon = {
+            'PENDING': '⏳',
+            'IN_PROGRESS': '🔄',
+            'RESOLVED': '✅',
+            'ESCALATED': '⚠️',
+            'FAILED': '❌'
+        }.get(event.resolution_status.name, '❓')
+        
+        severity_color = {
+            1: '🟢', 2: '🟢', 3: '🟢',  # Low
+            4: '🟡', 5: '🟡', 6: '🟡',  # Medium
+            7: '🟠', 8: '🟠',           # High
+            9: '🔴', 10: '🔴'          # Critical
+        }.get(event.severity, '⚪')
+        
+        event_type_emoji = {
+            'DINOSAUR_ESCAPE': '🦕',
+            'DINOSAUR_ILLNESS': '🤒',
+            'DINOSAUR_AGGRESSIVE': '😡',
+            'VISITOR_INJURY': '🩹',
+            'VISITOR_COMPLAINT': '😤',
+            'VISITOR_EMERGENCY': '🚨',
+            'FACILITY_POWER_OUTAGE': '⚡',
+            'FACILITY_EQUIPMENT_FAILURE': '🔧',
+            'WEATHER_STORM': '⛈️',
+            'WEATHER_EXTREME_TEMPERATURE': '🌡️',
+            'CUSTOM': '⚙️'
+        }.get(event.type.name, '📋')
+        
+        # Event header with status and progress
+        event_title = f"{status_icon} {event_type_emoji} {event.type.name.replace('_', ' ').title()}"
+        event_subtitle = f"{event.timestamp.strftime('%Y-%m-%d %H:%M:%S')} | Severity: {severity_color} {event.severity}/10"
+        
+        with st.expander(f"{event_title} - {event_subtitle}"):
+            # Event details in columns
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**Event Information:**")
+                st.write(f"**ID:** `{event.id}`")
+                st.write(f"**Type:** {event.type.name.replace('_', ' ').title()}")
+                st.write(f"**Severity:** {event.severity}/10 {severity_color}")
+                st.write(f"**Status:** {event.resolution_status.name.replace('_', ' ').title()} {status_icon}")
+                st.write(f"**Timestamp:** {event.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                # Resolution time and duration
+                if event.resolution_time:
+                    duration = event.resolution_time - event.timestamp
+                    duration_str = str(duration).split('.')[0]  # Remove microseconds
+                    st.write(f"**Resolution Time:** {event.resolution_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    st.write(f"**Duration:** {duration_str}")
+                elif event.resolution_status.name in ['PENDING', 'IN_PROGRESS']:
+                    ongoing_duration = current_time - event.timestamp
+                    ongoing_str = str(ongoing_duration).split('.')[0]
+                    st.write(f"**Ongoing Duration:** {ongoing_str}")
+            
+            with col2:
+                st.write("**Location & Impact:**")
+                st.write(f"**Zone:** {event.location.zone.replace('_', ' ').title()}")
+                if event.location.description:
+                    st.write(f"**Location Details:** {event.location.description}")
+                st.write(f"**Coordinates:** ({event.location.x:.1f}, {event.location.y:.1f})")
+                st.write(f"**Affected Agents:** {len(event.affected_agents)}")
+                
+                if event.affected_agents:
+                    with st.expander("View Affected Agents"):
+                        for agent_id in event.affected_agents:
+                            st.write(f"• {agent_id}")
+            
+            # Event description
+            if event.description:
+                st.write("**Description:**")
+                st.write(event.description)
+            
+            # Event parameters
+            if event.parameters:
+                st.write("**Event Parameters:**")
+                param_cols = st.columns(2)
+                param_items = list(event.parameters.items())
+                
+                for i, (key, value) in enumerate(param_items):
+                    col_idx = i % 2
+                    with param_cols[col_idx]:
+                        if isinstance(value, list):
+                            st.write(f"**{key.replace('_', ' ').title()}:** {', '.join(map(str, value))}")
+                        else:
+                            st.write(f"**{key.replace('_', ' ').title()}:** {value}")
+            
+            # Progress indicator for ongoing events
+            if event.resolution_status.name in ['PENDING', 'IN_PROGRESS']:
+                st.write("**Resolution Progress:**")
+                
+                # Simple progress estimation based on time elapsed and event type
+                elapsed_time = (current_time - event.timestamp).total_seconds()
+                
+                # Estimated resolution times by event type (in seconds)
+                estimated_times = {
+                    'DINOSAUR_ESCAPE': 3600,      # 1 hour
+                    'DINOSAUR_ILLNESS': 7200,     # 2 hours
+                    'DINOSAUR_AGGRESSIVE': 1800,  # 30 minutes
+                    'VISITOR_INJURY': 1800,       # 30 minutes
+                    'VISITOR_COMPLAINT': 900,     # 15 minutes
+                    'VISITOR_EMERGENCY': 600,     # 10 minutes
+                    'FACILITY_POWER_OUTAGE': 2400, # 40 minutes
+                    'FACILITY_EQUIPMENT_FAILURE': 3600, # 1 hour
+                    'WEATHER_STORM': 14400,       # 4 hours
+                    'WEATHER_EXTREME_TEMPERATURE': 7200, # 2 hours
+                    'CUSTOM': 1800                 # 30 minutes
+                }
+                
+                estimated_time = estimated_times.get(event.type.name, 1800)
+                progress = min(elapsed_time / estimated_time, 1.0)
+                
+                # Adjust progress based on status
+                if event.resolution_status.name == 'PENDING':
+                    progress = min(progress * 0.3, 0.3)  # Max 30% for pending
+                elif event.resolution_status.name == 'IN_PROGRESS':
+                    progress = max(0.3, min(progress, 0.9))  # 30-90% for in progress
+                
+                st.progress(progress)
+                
+                if progress < 0.3:
+                    st.write("🔍 **Status:** Assessing situation and mobilizing response team")
+                elif progress < 0.6:
+                    st.write("🚀 **Status:** Response team deployed, actively working on resolution")
+                elif progress < 0.9:
+                    st.write("🔧 **Status:** Implementing solution, monitoring progress")
+                else:
+                    st.write("✅ **Status:** Resolution nearly complete, finalizing details")
+            
+            # Action buttons for event management
+            st.write("**Actions:**")
+            action_cols = st.columns(4)
+            
+            with action_cols[0]:
+                if st.button(f"📋 Copy ID", key=f"copy_{event.id}"):
+                    st.write(f"Event ID: `{event.id}`")
+            
+            with action_cols[1]:
+                if st.button(f"📍 Show Location", key=f"location_{event.id}"):
+                    st.write(f"Location: {event.location.zone} ({event.location.x:.1f}, {event.location.y:.1f})")
+            
+            with action_cols[2]:
+                if event.affected_agents and st.button(f"👥 View Agents", key=f"agents_{event.id}"):
+                    st.write("Affected agents:")
+                    for agent_id in event.affected_agents:
+                        st.write(f"• {agent_id}")
+            
+            with action_cols[3]:
+                if st.button(f"📊 Event Stats", key=f"stats_{event.id}"):
+                    if event.resolution_time:
+                        duration = event.resolution_time - event.timestamp
+                        st.write(f"Resolution took: {str(duration).split('.')[0]}")
+                    else:
+                        ongoing = current_time - event.timestamp
+                        st.write(f"Ongoing for: {str(ongoing).split('.')[0]}")
+    
+    # Summary footer
+    if filtered_events:
+        st.divider()
+        st.subheader("📈 Summary")
+        
+        # Quick stats for filtered events
+        resolved_count = len([e for e in filtered_events if e.resolution_status.name == 'RESOLVED'])
+        pending_count = len([e for e in filtered_events if e.resolution_status.name in ['PENDING', 'IN_PROGRESS']])
+        failed_count = len([e for e in filtered_events if e.resolution_status.name == 'FAILED'])
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Filtered", len(filtered_events))
+        
+        with col2:
+            resolution_rate = (resolved_count / len(filtered_events)) * 100 if filtered_events else 0
+            st.metric("Resolution Rate", f"{resolution_rate:.1f}%")
+        
+        with col3:
+            st.metric("Active Events", pending_count)
+        
+        with col4:
+            st.metric("Failed Events", failed_count)
+        
+        # Average resolution time for resolved events
+        resolved_events = [e for e in filtered_events if e.resolution_time]
+        if resolved_events:
+            total_duration = sum([(e.resolution_time - e.timestamp).total_seconds() for e in resolved_events])
+            avg_duration = total_duration / len(resolved_events)
+            avg_duration_str = str(datetime.fromtimestamp(avg_duration) - datetime.fromtimestamp(0)).split('.')[0]
+            st.write(f"**Average Resolution Time:** {avg_duration_str}")
+        
+        # Export functionality
+        if st.button("📥 Export Event Data", help="Export filtered events as JSON"):
+            import json
+            export_data = [event.to_dict() for event in filtered_events]
+            st.download_button(
+                label="Download JSON",
+                data=json.dumps(export_data, indent=2),
+                file_name=f"event_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+            )
 
 
 def render_settings(session_manager: SessionStateManager):
