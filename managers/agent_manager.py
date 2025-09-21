@@ -718,6 +718,184 @@ class AgentManager:
         """
         return [agent for agent in self.agents.values() if agent.role == role]
     
+    def check_event_resolution_by_agents(self, event: Event) -> Dict[str, Any]:
+        """Check if agents have indicated that an event is resolved.
+        
+        Args:
+            event: Event to check resolution for
+            
+        Returns:
+            Dictionary with resolution status information
+        """
+        resolution_info = {
+            "event_id": event.id,
+            "agents_responding": [],
+            "resolution_indicators": [],
+            "escalation_indicators": [],
+            "overall_status": "in_progress"
+        }
+        
+        # Get recent conversations related to this event
+        recent_conversations = self.get_agent_conversations()
+        
+        # Look for event-related conversations
+        event_conversations = []
+        for conv in recent_conversations:
+            if conv.get("event_id") == event.id:
+                event_conversations.append(conv)
+        
+        if not event_conversations:
+            resolution_info["overall_status"] = "no_response"
+            return resolution_info
+        
+        # Analyze agent responses for resolution indicators
+        resolution_keywords = [
+            "resolved", "handled", "completed", "fixed", "secured", "contained",
+            "treated", "repaired", "evacuated", "safe", "under control", "situation normal"
+        ]
+        
+        escalation_keywords = [
+            "need help", "backup required", "escalate", "emergency", "critical",
+            "cannot handle", "overwhelmed", "failed", "assistance needed", "need backup", "need immediate", "backup"
+        ]
+        
+        for conv in event_conversations:
+            individual_responses = conv.get("individual_responses", {})
+            
+            for agent_id, response in individual_responses.items():
+                if response and isinstance(response, str):
+                    response_lower = response.lower()
+                    
+                    resolution_info["agents_responding"].append(agent_id)
+                    
+                    # Check for resolution indicators
+                    found_resolution = [kw for kw in resolution_keywords if kw in response_lower]
+                    if found_resolution:
+                        resolution_info["resolution_indicators"].extend(found_resolution)
+                    
+                    # Check for escalation indicators
+                    found_escalation = [kw for kw in escalation_keywords if kw in response_lower]
+                    if found_escalation:
+                        resolution_info["escalation_indicators"].extend(found_escalation)
+        
+        # Determine overall status
+        if resolution_info["escalation_indicators"]:
+            resolution_info["overall_status"] = "needs_escalation"
+        elif resolution_info["resolution_indicators"]:
+            # Check if enough agents indicate resolution
+            responding_agents = len(set(resolution_info["agents_responding"]))
+            if responding_agents >= 2 or len(resolution_info["resolution_indicators"]) >= 3:
+                resolution_info["overall_status"] = "resolved"
+            else:
+                resolution_info["overall_status"] = "partial_resolution"
+        
+        return resolution_info
+    
+    def get_agent_event_responses(self, event_id: str) -> Dict[str, str]:
+        """Get agent responses for a specific event.
+        
+        Args:
+            event_id: ID of the event
+            
+        Returns:
+            Dictionary mapping agent IDs to their responses
+        """
+        responses = {}
+        
+        # Look through conversation history for event-related responses
+        for conv in self.conversation_history:
+            if conv.get("event_id") == event_id:
+                individual_responses = conv.get("individual_responses", {})
+                responses.update(individual_responses)
+        
+        return responses
+    
+    def notify_event_resolution(self, event: Event) -> None:
+        """Notify agents that an event has been resolved.
+        
+        Args:
+            event: Event that was resolved
+        """
+        resolution_message = (
+            f"EVENT RESOLVED: {event.type.name.replace('_', ' ').title()} "
+            f"at {event.location.zone} has been resolved. "
+            f"Status: {event.resolution_status.name}. Thank you for your response."
+        )
+        
+        # Notify all agents who were involved in the event
+        for agent_id in event.affected_agents:
+            try:
+                self.send_message_to_agent(agent_id, resolution_message, "EventSystem")
+            except Exception as e:
+                self.logger.error(f"Error notifying agent {agent_id} of event resolution: {e}")
+        
+        self.logger.info(f"Notified {len(event.affected_agents)} agents of event {event.id} resolution")
+    
+    def escalate_event_to_agents(self, event: Event) -> Dict[str, Any]:
+        """Escalate an event to additional agents or higher authority.
+        
+        Args:
+            event: Event to escalate
+            
+        Returns:
+            Dictionary with escalation results
+        """
+        escalation_message = (
+            f"ESCALATED EVENT: {event.type.name.replace('_', ' ').title()} "
+            f"(Severity {event.severity}) at {event.location.zone} requires immediate attention. "
+            f"Previous response attempts have indicated need for escalation."
+        )
+        
+        # Get all available agents for escalation
+        all_agents = list(self.agents.keys())
+        
+        # Prioritize staff agents for escalation
+        staff_agents = [
+            agent_id for agent_id, agent in self.agents.items()
+            if agent.role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY]
+        ]
+        
+        escalation_targets = staff_agents if staff_agents else all_agents
+        
+        escalation_responses = {}
+        for agent_id in escalation_targets:
+            try:
+                response = self.send_message_to_agent(agent_id, escalation_message, "EventSystem")
+                escalation_responses[agent_id] = response
+            except Exception as e:
+                self.logger.error(f"Error escalating to agent {agent_id}: {e}")
+                escalation_responses[agent_id] = f"Error: {str(e)}"
+        
+        # Record escalation in conversation history
+        escalation_record = {
+            "timestamp": datetime.now().isoformat(),
+            "event_id": event.id,
+            "event_type": event.type.name,
+            "escalation_responses": escalation_responses,
+            "escalation_targets": escalation_targets,
+            "escalation_reason": "Agent responses indicated need for escalation"
+        }
+        
+        self.conversation_history.append(escalation_record)
+        
+        return {
+            "event_id": event.id,
+            "escalation_targets": escalation_targets,
+            "escalation_responses": escalation_responses,
+            "escalation_time": datetime.now().isoformat()
+        }
+    
+    def get_agents_by_role(self, role: AgentRole) -> List[Agent]:
+        """Get all agents with a specific role.
+        
+        Args:
+            role: Agent role to filter by
+            
+        Returns:
+            List of agents with the specified role
+        """
+        return [agent for agent in self.agents.values() if agent.role == role]
+    
     def get_agents_by_location(self, zone: str) -> List[Agent]:
         """Get all agents in a specific location zone.
         
