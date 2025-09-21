@@ -175,6 +175,60 @@ class RealTimeAgentChat:
                     "Safety barriers installed, area secured for work.",
                     "Coordinating with security for visitor safety."
                 ]
+            },
+            AgentRole.TOURIST: {
+                "dinosaur_escape": [
+                    "😱 Is that dinosaur supposed to be running around loose?!",
+                    "Should we be running? This wasn't in the brochure!",
+                    "My kids are terrified! Where are the safety exits?",
+                    "This is either the best or worst vacation ever!",
+                    "I'm getting this on video - nobody will believe this!"
+                ],
+                "visitor_complaint": [
+                    "The wait times are ridiculous and the food is overpriced!",
+                    "We paid premium prices for this experience!",
+                    "The staff needs better training on customer service.",
+                    "I want to speak to a manager about this situation!"
+                ],
+                "facility_issue": [
+                    "Great, now the power's out. What's next?",
+                    "Are we getting refunds for this technical difficulty?",
+                    "This place needs better maintenance!",
+                    "At least the dinosaurs are still working..."
+                ],
+                "general": [
+                    "This place is amazing! Look at those dinosaurs!",
+                    "Are we safe here? Those fences look pretty thin...",
+                    "Where's the gift shop? I need souvenirs!",
+                    "Can we get closer to the T-Rex? For photos?"
+                ]
+            },
+            AgentRole.DINOSAUR: {
+                "dinosaur_escape": [
+                    "🦕 *ROOOOOAAARRR* Freedom at last!",
+                    "🦖 *sniffs air* Humans smell like... fear and sunscreen.",
+                    "🦕 *stomps around* These tiny humans are everywhere!",
+                    "🦖 *eyes the fence* That barrier was insulting anyway.",
+                    "🦕 *curious growling* What are those flashing things they're pointing at me?"
+                ],
+                "dinosaur_illness": [
+                    "🦕 *weak roar* Not feeling so good...",
+                    "🦖 *sluggish movement* Something's wrong with my tummy.",
+                    "🦕 *lies down heavily* Just need to rest a bit...",
+                    "🦖 *whimpering sounds* Where's the nice vet human?"
+                ],
+                "visitor_interactions": [
+                    "🦕 *tilts head curiously* These small creatures are interesting.",
+                    "🦖 *snorts* They keep making those clicking sounds at me.",
+                    "🦕 *gentle rumbling* The little ones aren't afraid. I like them.",
+                    "🦖 *poses majestically* Yes, admire my magnificent presence!"
+                ],
+                "general": [
+                    "🦕 *contentedly munching* These plants taste different than 65 million years ago.",
+                    "🦖 *stretches* Being an apex predator is exhausting work.",
+                    "🦕 *social calling* Where are my herd mates?",
+                    "🦖 *territorial display* This is MY territory, tiny humans!"
+                ]
             }
         }
     
@@ -312,6 +366,18 @@ class RealTimeAgentChat:
                         f"Technical team responding to {event.location.zone}.",
                         f"Checking all systems in {event.location.zone} area.",
                         f"Maintenance protocols activated for {event.location.zone}."
+                    ],
+                    AgentRole.TOURIST: [
+                        f"What's happening at {event.location.zone}? Should we be concerned?",
+                        f"Is this normal for {event.location.zone}? Nobody told us about this!",
+                        f"Are we getting refunds if {event.location.zone} is closed?",
+                        f"The kids are scared about what's happening at {event.location.zone}!"
+                    ],
+                    AgentRole.DINOSAUR: [
+                        f"🦕 *alert roar* Something's happening in my territory at {event.location.zone}!",
+                        f"🦖 *investigative sniffing* Unusual activity detected at {event.location.zone}.",
+                        f"🦕 *protective stance* Monitoring situation at {event.location.zone}.",
+                        f"🦖 *territorial display* {event.location.zone} is under my watch!"
                     ]
                 }
                 
@@ -481,8 +547,27 @@ class RealTimeAgentChat:
                     )
                     
                     # Add small delay to make conversation feel natural
-                    threading.Timer(1.0 + (hash(agent_id) % 3), 
-                                  lambda: self.message_queue.put(follow_up_message)).start()
+                    delay = 1.0 + (hash(agent_id) % 3)  # 1-4 second delay
+                    threading.Timer(delay, 
+                                  lambda msg=follow_up_message: self.message_queue.put(msg)).start()
+                    
+                    # Schedule a second wave of follow-ups for longer conversations
+                    if original_message.priority.value >= ChatPriority.HIGH.value:
+                        second_wave_delay = 5.0 + (hash(agent_id + "second") % 4)  # 5-9 seconds later
+                        second_follow_up = self._generate_second_wave_response(agent, original_message)
+                        if second_follow_up:
+                            second_message = QuickChatMessage(
+                                id=f"msg_{uuid.uuid4().hex[:8]}",
+                                sender_id=agent.id,
+                                sender_name=agent.name,
+                                content=second_follow_up,
+                                timestamp=datetime.now(),
+                                priority=ChatPriority.NORMAL,
+                                event_id=original_message.event_id,
+                                message_type="second_wave"
+                            )
+                            threading.Timer(second_wave_delay,
+                                          lambda msg=second_message: self.message_queue.put(msg)).start()
     
     def _get_responding_agents(self, message: QuickChatMessage) -> List[str]:
         """Get list of agents that should respond to a message.
@@ -504,11 +589,13 @@ class RealTimeAgentChat:
         
         # Define response patterns based on sender role
         response_patterns = {
-            AgentRole.PARK_RANGER: [AgentRole.SECURITY, AgentRole.VETERINARIAN, AgentRole.GUEST_RELATIONS],
-            AgentRole.SECURITY: [AgentRole.PARK_RANGER, AgentRole.GUEST_RELATIONS],
-            AgentRole.VETERINARIAN: [AgentRole.PARK_RANGER, AgentRole.SECURITY],
-            AgentRole.GUEST_RELATIONS: [AgentRole.PARK_RANGER, AgentRole.SECURITY],
-            AgentRole.MAINTENANCE: [AgentRole.SECURITY, AgentRole.GUEST_RELATIONS]
+            AgentRole.PARK_RANGER: [AgentRole.SECURITY, AgentRole.VETERINARIAN, AgentRole.GUEST_RELATIONS, AgentRole.TOURIST],
+            AgentRole.SECURITY: [AgentRole.PARK_RANGER, AgentRole.GUEST_RELATIONS, AgentRole.TOURIST],
+            AgentRole.VETERINARIAN: [AgentRole.PARK_RANGER, AgentRole.SECURITY, AgentRole.DINOSAUR],
+            AgentRole.GUEST_RELATIONS: [AgentRole.TOURIST, AgentRole.PARK_RANGER, AgentRole.SECURITY],
+            AgentRole.MAINTENANCE: [AgentRole.SECURITY, AgentRole.GUEST_RELATIONS, AgentRole.TOURIST],
+            AgentRole.TOURIST: [AgentRole.GUEST_RELATIONS, AgentRole.PARK_RANGER, AgentRole.SECURITY, AgentRole.DINOSAUR],
+            AgentRole.DINOSAUR: [AgentRole.VETERINARIAN, AgentRole.PARK_RANGER, AgentRole.TOURIST]
         }
         
         target_roles = response_patterns.get(sender_role, [])
@@ -518,8 +605,8 @@ class RealTimeAgentChat:
             if agent.role in target_roles:
                 responding_agents.append(agent_id)
         
-        # Limit to 2-3 responses to avoid spam
-        return responding_agents[:3]
+        # Allow more responses for richer conversations, but limit to prevent spam
+        return responding_agents[:5]
     
     def _generate_follow_up_response(self, agent: Agent, original_message: QuickChatMessage) -> Optional[str]:
         """Generate a follow-up response from an agent.
@@ -558,6 +645,21 @@ class RealTimeAgentChat:
                     "Technical support standing by.",
                     "All systems checked and operational.",
                     "Maintenance team ready to assist."
+                ],
+                AgentRole.TOURIST: [
+                    "Wait, what's happening now?",
+                    "Should we be worried about this?",
+                    "Is this part of the show?",
+                    "Can someone explain what's going on?",
+                    "Are we safe here?",
+                    "This is not what I expected from a family vacation!"
+                ],
+                AgentRole.DINOSAUR: [
+                    "🦕 *curious sniffing* What's all the commotion about?",
+                    "🦖 *alert posture* Something's different in my territory.",
+                    "🦕 *nervous shuffling* The humans seem agitated.",
+                    "🦖 *investigative roar* Is there danger nearby?",
+                    "🦕 *protective stance* Must watch over my area."
                 ]
             }
             
@@ -571,6 +673,73 @@ class RealTimeAgentChat:
         
         except Exception as e:
             self.logger.error(f"Error generating follow-up response for {agent.name}: {e}")
+            return None
+    
+    def _generate_second_wave_response(self, agent: Agent, original_message: QuickChatMessage) -> Optional[str]:
+        """Generate a second wave follow-up response to keep conversations going.
+        
+        Args:
+            agent: Agent generating the second follow-up
+            original_message: Original message that started the conversation
+            
+        Returns:
+            Second wave response string or None
+        """
+        try:
+            # Second wave responses are more situational and reactive
+            second_wave_templates = {
+                AgentRole.TOURIST: [
+                    "Okay, but seriously, when do we get our money back?",
+                    "My kids are asking if the dinosaurs are real. What do I tell them?",
+                    "Is there a manager I can speak to about this situation?",
+                    "The gift shop better have some good discounts after this!",
+                    "I'm posting about this on social media right now.",
+                    "Next time I'm going to Disney World instead."
+                ],
+                AgentRole.DINOSAUR: [
+                    "🦕 *settles down* The excitement seems to be calming down.",
+                    "🦖 *yawns* All this drama is making me sleepy.",
+                    "🦕 *returns to grazing* Back to the important business of eating.",
+                    "🦖 *stretches* Time for my afternoon nap.",
+                    "🦕 *social call* Calling to my friends to make sure they're okay."
+                ],
+                AgentRole.GUEST_RELATIONS: [
+                    "📢 Don't forget to visit our newly opened souvenir photo booth!",
+                    "🎁 Complimentary dinosaur plushies for all affected guests!",
+                    "🍦 The ice cream cart is now offering double scoops!",
+                    "📸 Professional photographers available for family photos!",
+                    "🎪 Special behind-the-scenes tour starting in 10 minutes!"
+                ],
+                AgentRole.SECURITY: [
+                    "All clear - situation is under control.",
+                    "Resuming normal patrol patterns.",
+                    "Incident report filed and documented.",
+                    "Additional security measures implemented."
+                ],
+                AgentRole.PARK_RANGER: [
+                    "Wildlife behavior returning to normal patterns.",
+                    "All safety protocols have been effective.",
+                    "Continuing to monitor the situation closely.",
+                    "Coordinating with all teams for full resolution."
+                ],
+                AgentRole.VETERINARIAN: [
+                    "All animals showing normal vital signs.",
+                    "No medical intervention required at this time.",
+                    "Continuing health monitoring protocols.",
+                    "Ready to respond if medical needs arise."
+                ]
+            }
+            
+            templates = second_wave_templates.get(agent.role, [])
+            if templates:
+                # Use different hash for variety in second wave
+                template_index = (hash(agent.id + original_message.id + "wave2")) % len(templates)
+                return templates[template_index]
+            
+            return None
+        
+        except Exception as e:
+            self.logger.error(f"Error generating second wave response for {agent.name}: {e}")
             return None
     
     def get_recent_messages(self, count: int = 20) -> List[QuickChatMessage]:
