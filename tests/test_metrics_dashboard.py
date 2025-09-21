@@ -1863,6 +1863,440 @@ class TestMetricsDashboardIntegration:
             mock_warning.assert_called()
             warning_calls = [str(call) for call in mock_warning.call_args_list]
             assert any("No data available for the selected time range" in call for call in warning_calls)
+    
+    def test_get_metric_key_helper(self):
+        """Test the _get_metric_key helper function."""
+        from main import _get_metric_key
+        
+        # Test standard mappings
+        assert _get_metric_key("Visitor Satisfaction") == "visitor_satisfaction"
+        assert _get_metric_key("Safety Rating") == "safety_rating"
+        assert _get_metric_key("Facility Efficiency") == "facility_efficiency"
+        assert _get_metric_key("Dinosaur Happiness") == "dinosaur_happiness"
+        
+        # Test fallback for unknown metrics
+        assert _get_metric_key("Unknown Metric") == "unknown_metric"
+        assert _get_metric_key("Custom Score") == "custom_score"
+    
+    def test_prepare_dinosaur_chart_data_helper(self):
+        """Test the _prepare_dinosaur_chart_data helper function."""
+        from main import _prepare_dinosaur_chart_data
+        from models.core import MetricsSnapshot
+        
+        now = datetime.now()
+        history = [
+            MetricsSnapshot(
+                visitor_satisfaction=0.8,
+                dinosaur_happiness={'T-Rex-001': 0.7, 'Triceratops-001': 0.9},
+                facility_efficiency=0.9,
+                safety_rating=0.85,
+                timestamp=now - timedelta(hours=1)
+            ),
+            MetricsSnapshot(
+                visitor_satisfaction=0.82,
+                dinosaur_happiness={'T-Rex-001': 0.72, 'Triceratops-001': 0.92},
+                facility_efficiency=0.92,
+                safety_rating=0.87,
+                timestamp=now
+            )
+        ]
+        
+        selected_dinosaurs = ['T-Rex-001', 'Triceratops-001']
+        
+        with patch('pandas.DataFrame') as mock_dataframe:
+            mock_df = Mock()
+            mock_dataframe.return_value = mock_df
+            
+            result = _prepare_dinosaur_chart_data(history, selected_dinosaurs)
+            
+            # Verify DataFrame was created with correct data structure
+            mock_dataframe.assert_called_once()
+            call_args = mock_dataframe.call_args[0][0]  # Get the data passed to DataFrame
+            
+            # Verify data structure
+            assert len(call_args) == 2  # Two time points
+            assert 'timestamp' in call_args[0]
+            assert 'T-Rex' in call_args[0]  # Simplified name
+            assert 'Triceratops' in call_args[0]  # Simplified name
+            
+            assert result == mock_df
+    
+    def test_prepare_dinosaur_chart_data_empty_history(self):
+        """Test _prepare_dinosaur_chart_data with empty history."""
+        from main import _prepare_dinosaur_chart_data
+        
+        with patch('pandas.DataFrame') as mock_dataframe:
+            mock_df = Mock()
+            mock_df.empty = True
+            mock_dataframe.return_value = mock_df
+            
+            result = _prepare_dinosaur_chart_data([], ['T-Rex-001'])
+            
+            # Should still create DataFrame but it will be empty
+            mock_dataframe.assert_called_once()
+            assert result == mock_df
+    
+    def test_prepare_dinosaur_chart_data_missing_dinosaurs(self):
+        """Test _prepare_dinosaur_chart_data when selected dinosaurs are not in history."""
+        from main import _prepare_dinosaur_chart_data
+        from models.core import MetricsSnapshot
+        
+        now = datetime.now()
+        history = [
+            MetricsSnapshot(
+                visitor_satisfaction=0.8,
+                dinosaur_happiness={'T-Rex-001': 0.7},  # Only one dinosaur
+                facility_efficiency=0.9,
+                safety_rating=0.85,
+                timestamp=now
+            )
+        ]
+        
+        selected_dinosaurs = ['T-Rex-001', 'Missing-Dinosaur']
+        
+        with patch('pandas.DataFrame') as mock_dataframe:
+            mock_df = Mock()
+            mock_dataframe.return_value = mock_df
+            
+            result = _prepare_dinosaur_chart_data(history, selected_dinosaurs)
+            
+            # Verify DataFrame was created
+            mock_dataframe.assert_called_once()
+            call_args = mock_dataframe.call_args[0][0]
+            
+            # Should only include data for existing dinosaur
+            assert len(call_args) == 1
+            assert 'T-Rex' in call_args[0]
+            assert 'Missing-Dinosaur' not in str(call_args[0])
+    
+    def test_prepare_dinosaur_chart_data_import_error(self):
+        """Test _prepare_dinosaur_chart_data when pandas import fails."""
+        from main import _prepare_dinosaur_chart_data
+        
+        with patch('streamlit.warning') as mock_warning:
+            # Mock import error by patching the import
+            with patch('builtins.__import__', side_effect=ImportError("No module named 'pandas'")):
+                result = _prepare_dinosaur_chart_data([], ['T-Rex-001'])
+                
+                assert result is None
+                mock_warning.assert_called_with("Pandas not available for dinosaur trend charts.")
+    
+    def test_prepare_dinosaur_chart_data_processing_error(self):
+        """Test _prepare_dinosaur_chart_data when data processing fails."""
+        from main import _prepare_dinosaur_chart_data
+        from models.core import MetricsSnapshot
+        
+        # Create invalid history that will cause processing error
+        invalid_history = [Mock()]  # Mock object that doesn't have expected attributes
+        
+        with patch('streamlit.error') as mock_error, \
+             patch('pandas.DataFrame', side_effect=Exception("Processing error")):
+            
+            result = _prepare_dinosaur_chart_data(invalid_history, ['T-Rex-001'])
+            
+            assert result is None
+            mock_error.assert_called()
+            error_calls = [str(call) for call in mock_error.call_args_list]
+            assert any("Error preparing dinosaur chart data" in call for call in error_calls)
+    
+    def test_metrics_dashboard_real_time_sync_error(self, mock_session_manager):
+        """Test metrics dashboard when real-time sync fails."""
+        with patch('streamlit.title'), \
+             patch('streamlit.write'), \
+             patch('streamlit.warning') as mock_warning, \
+             patch('utils.real_time_sync.apply_real_time_updates', side_effect=Exception("Sync error")):
+            
+            from main import render_metrics_dashboard
+            render_metrics_dashboard(mock_session_manager)
+            
+            # Verify warning is displayed for sync error
+            warning_calls = [str(call) for call in mock_warning.call_args_list]
+            assert any("Real-time sync unavailable" in call for call in warning_calls)
+    
+    def test_metrics_dashboard_correlation_analysis_error(self, mock_session_manager):
+        """Test correlation analysis when calculation fails."""
+        with patch('streamlit.title'), \
+             patch('streamlit.write'), \
+             patch('streamlit.columns') as mock_columns, \
+             patch('streamlit.metric'), \
+             patch('streamlit.checkbox') as mock_checkbox, \
+             patch('streamlit.button') as mock_button, \
+             patch('streamlit.subheader'), \
+             patch('streamlit.divider'), \
+             patch('streamlit.markdown'), \
+             patch('streamlit.progress'), \
+             patch('streamlit.selectbox') as mock_selectbox, \
+             patch('streamlit.multiselect') as mock_multiselect, \
+             patch('streamlit.line_chart'), \
+             patch('streamlit.info') as mock_info, \
+             patch('pandas.DataFrame') as mock_dataframe:
+            
+            # Mock DataFrame with correlation error
+            mock_df = Mock()
+            mock_df.empty = False
+            mock_df.columns = ['Visitor Satisfaction', 'Safety Rating']
+            mock_df.corr.side_effect = Exception("Correlation error")
+            mock_dataframe.return_value = mock_df
+            
+            mock_col = Mock()
+            mock_col.__enter__ = Mock(return_value=mock_col)
+            mock_col.__exit__ = Mock(return_value=None)
+            mock_columns.return_value = [mock_col] * 4
+            
+            mock_checkbox.return_value = False
+            mock_button.return_value = False
+            mock_selectbox.side_effect = [5, "1h", "Line Chart"]
+            mock_multiselect.return_value = ["Visitor Satisfaction", "Safety Rating"]
+            
+            from main import render_metrics_dashboard
+            render_metrics_dashboard(mock_session_manager)
+            
+            # Verify info message is displayed when correlation fails
+            info_calls = [str(call) for call in mock_info.call_args_list]
+            assert any("Correlation analysis requires multiple metrics" in call for call in info_calls)
+    
+    def test_metrics_dashboard_with_zero_dinosaur_happiness(self, mock_session_manager):
+        """Test metrics dashboard when dinosaur happiness is zero."""
+        from models.core import MetricsSnapshot
+        
+        now = datetime.now()
+        zero_happiness_metrics = MetricsSnapshot(
+            visitor_satisfaction=0.8,
+            dinosaur_happiness={'T-Rex-001': 0.0, 'Triceratops-001': 0.0},
+            facility_efficiency=0.9,
+            safety_rating=0.85,
+            timestamp=now
+        )
+        
+        mock_session_manager.get_latest_metrics.return_value = zero_happiness_metrics
+        mock_session_manager.get_metrics_history.return_value = [zero_happiness_metrics]
+        
+        with patch('streamlit.title'), \
+             patch('streamlit.write'), \
+             patch('streamlit.columns') as mock_columns, \
+             patch('streamlit.metric') as mock_metric, \
+             patch('streamlit.checkbox') as mock_checkbox, \
+             patch('streamlit.button') as mock_button, \
+             patch('streamlit.subheader'), \
+             patch('streamlit.divider'), \
+             patch('streamlit.markdown'), \
+             patch('streamlit.progress') as mock_progress:
+            
+            mock_col = Mock()
+            mock_col.__enter__ = Mock(return_value=mock_col)
+            mock_col.__exit__ = Mock(return_value=None)
+            mock_columns.return_value = [mock_col] * 4
+            
+            mock_checkbox.return_value = False
+            mock_button.return_value = False
+            
+            from main import render_metrics_dashboard
+            render_metrics_dashboard(mock_session_manager)
+            
+            # Verify metrics are still displayed even with zero values
+            assert mock_metric.call_count >= 4
+            assert mock_progress.call_count >= 2  # Progress bars for dinosaurs
+    
+    def test_metrics_dashboard_with_single_dinosaur(self, mock_session_manager):
+        """Test metrics dashboard with only one dinosaur."""
+        from models.core import MetricsSnapshot
+        
+        now = datetime.now()
+        single_dino_metrics = MetricsSnapshot(
+            visitor_satisfaction=0.8,
+            dinosaur_happiness={'T-Rex-001': 0.7},  # Only one dinosaur
+            facility_efficiency=0.9,
+            safety_rating=0.85,
+            timestamp=now
+        )
+        
+        mock_session_manager.get_latest_metrics.return_value = single_dino_metrics
+        mock_session_manager.get_metrics_history.return_value = [single_dino_metrics]
+        
+        with patch('streamlit.title'), \
+             patch('streamlit.write') as mock_write, \
+             patch('streamlit.columns') as mock_columns, \
+             patch('streamlit.metric') as mock_metric, \
+             patch('streamlit.checkbox') as mock_checkbox, \
+             patch('streamlit.button') as mock_button, \
+             patch('streamlit.subheader'), \
+             patch('streamlit.divider'), \
+             patch('streamlit.markdown'), \
+             patch('streamlit.progress') as mock_progress:
+            
+            mock_col = Mock()
+            mock_col.__enter__ = Mock(return_value=mock_col)
+            mock_col.__exit__ = Mock(return_value=None)
+            mock_columns.return_value = [mock_col] * 4
+            
+            mock_checkbox.return_value = False
+            mock_button.return_value = False
+            
+            from main import render_metrics_dashboard
+            render_metrics_dashboard(mock_session_manager)
+            
+            # Verify single dinosaur is handled correctly
+            write_calls = [str(call) for call in mock_write.call_args_list]
+            assert any("Individual Dinosaur Status" in call for call in write_calls)
+            assert mock_progress.call_count >= 1  # At least one progress bar
+    
+    def test_metrics_dashboard_with_empty_dinosaur_happiness(self, mock_session_manager):
+        """Test metrics dashboard when dinosaur_happiness is empty."""
+        from models.core import MetricsSnapshot
+        
+        now = datetime.now()
+        empty_dino_metrics = MetricsSnapshot(
+            visitor_satisfaction=0.8,
+            dinosaur_happiness={},  # Empty dinosaur happiness
+            facility_efficiency=0.9,
+            safety_rating=0.85,
+            timestamp=now
+        )
+        
+        mock_session_manager.get_latest_metrics.return_value = empty_dino_metrics
+        mock_session_manager.get_metrics_history.return_value = [empty_dino_metrics]
+        
+        with patch('streamlit.title'), \
+             patch('streamlit.write'), \
+             patch('streamlit.columns') as mock_columns, \
+             patch('streamlit.metric') as mock_metric, \
+             patch('streamlit.checkbox') as mock_checkbox, \
+             patch('streamlit.button') as mock_button, \
+             patch('streamlit.subheader'), \
+             patch('streamlit.divider'), \
+             patch('streamlit.markdown'):
+            
+            mock_col = Mock()
+            mock_col.__enter__ = Mock(return_value=mock_col)
+            mock_col.__exit__ = Mock(return_value=None)
+            mock_columns.return_value = [mock_col] * 4
+            
+            mock_checkbox.return_value = False
+            mock_button.return_value = False
+            
+            from main import render_metrics_dashboard
+            render_metrics_dashboard(mock_session_manager)
+            
+            # Verify main metrics are still displayed
+            assert mock_metric.call_count >= 4
+            
+            # Verify dinosaur section is not displayed when empty
+            write_calls = [str(call) for call in mock_write.call_args_list]
+            # Should not show dinosaur happiness section
+            assert not any("Individual Dinosaur Status" in call for call in write_calls)
+    
+    def test_calculate_trend_edge_cases(self):
+        """Test _calculate_trend with edge cases."""
+        from main import _calculate_trend
+        import pandas as pd
+        
+        # Test with single value
+        single_value = pd.Series([0.8])
+        trend = _calculate_trend(single_value)
+        assert trend == 0.0
+        
+        # Test with two identical values
+        identical_values = pd.Series([0.8, 0.8])
+        trend = _calculate_trend(identical_values)
+        assert trend == 0.0
+        
+        # Test with zero values in first half
+        zero_first_half = pd.Series([0.0, 0.0, 0.8, 0.9])
+        trend = _calculate_trend(zero_first_half)
+        assert trend == 0.0  # Should handle division by zero
+        
+        # Test with exception handling
+        with patch.object(pd.Series, 'mean', side_effect=Exception("Calculation error")):
+            error_series = pd.Series([0.8, 0.9])
+            trend = _calculate_trend(error_series)
+            assert trend == 0.0  # Should return 0.0 on error
+    
+    def test_filter_history_by_timerange_edge_cases(self):
+        """Test _filter_history_by_timerange with edge cases."""
+        from main import _filter_history_by_timerange
+        from models.core import MetricsSnapshot
+        
+        # Test with empty history
+        empty_result = _filter_history_by_timerange([], '1h')
+        assert empty_result == []
+        
+        # Test with invalid time range
+        now = datetime.now()
+        history = [
+            MetricsSnapshot(
+                visitor_satisfaction=0.8,
+                dinosaur_happiness={},
+                facility_efficiency=0.9,
+                safety_rating=0.85,
+                timestamp=now
+            )
+        ]
+        
+        invalid_result = _filter_history_by_timerange(history, 'invalid_range')
+        assert invalid_result == history  # Should return original history
+        
+        # Test with future timestamps (edge case)
+        future_history = [
+            MetricsSnapshot(
+                visitor_satisfaction=0.8,
+                dinosaur_happiness={},
+                facility_efficiency=0.9,
+                safety_rating=0.85,
+                timestamp=now + timedelta(hours=1)  # Future timestamp
+            )
+        ]
+        
+        future_result = _filter_history_by_timerange(future_history, '1h')
+        assert len(future_result) == 1  # Should include future timestamps
+    
+    def test_calculate_metric_delta_edge_cases(self):
+        """Test _calculate_metric_delta with edge cases."""
+        from main import _calculate_metric_delta
+        from models.core import MetricsSnapshot
+        
+        now = datetime.now()
+        
+        # Test with zero previous value
+        zero_previous_history = [
+            MetricsSnapshot(
+                visitor_satisfaction=0.0,  # Zero previous value
+                dinosaur_happiness={},
+                facility_efficiency=0.9,
+                safety_rating=0.85,
+                timestamp=now - timedelta(hours=1)
+            ),
+            MetricsSnapshot(
+                visitor_satisfaction=0.8,  # Current value
+                dinosaur_happiness={},
+                facility_efficiency=0.9,
+                safety_rating=0.85,
+                timestamp=now
+            )
+        ]
+        
+        delta = _calculate_metric_delta(zero_previous_history, 'visitor_satisfaction')
+        assert delta is None  # Should return None when previous is zero
+        
+        # Test with invalid metric name
+        valid_history = [
+            MetricsSnapshot(
+                visitor_satisfaction=0.7,
+                dinosaur_happiness={},
+                facility_efficiency=0.9,
+                safety_rating=0.85,
+                timestamp=now - timedelta(hours=1)
+            ),
+            MetricsSnapshot(
+                visitor_satisfaction=0.8,
+                dinosaur_happiness={},
+                facility_efficiency=0.9,
+                safety_rating=0.85,
+                timestamp=now
+            )
+        ]
+        
+        invalid_delta = _calculate_metric_delta(valid_history, 'invalid_metric')
+        assert invalid_delta is None  # Should return None for invalid metric
 
 
 if __name__ == "__main__":

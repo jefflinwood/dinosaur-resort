@@ -123,23 +123,68 @@
   - Write end-to-end integration tests for complete system functionality
   - _Requirements: 4.5, 1.5_
 
-- [ ] 16. Add comprehensive error handling and recovery
+- [ ] 16. Implement human player data models and core classes
+  - Create HumanAgent class extending the base Agent model
+  - Implement ChatMessage data model for human-AI communication
+  - Add MessageType enum for distinguishing human, AI, and system messages
+  - Write unit tests for human player data model validation
+  - _Requirements: 8.2, 8.8_
+
+- [x] 17. Build human player manager system
+  - Implement HumanPlayerManager class for role selection and agent creation
+  - Add human player role switching and permission management
+  - Create conversation access filtering for human players
+  - Write unit tests for human player management functionality
+  - _Requirements: 8.1, 8.9, 8.5_
+
+- [ ] 18. Integrate human player with ag2 conversation system
+  - Create HumanAgent class extending ag2's ConversableAgent
+  - Implement custom message handling to bridge human input with ag2 conversations
+  - Add conversation filtering to show only relevant messages to human players
+  - Write integration tests for human-AI agent communication through ag2
+  - _Requirements: 8.4, 8.5, 8.6_
+
+- [ ] 19. Build human player chat interface
+  - Create Streamlit chat interface for human player input
+  - Implement real-time message display with clear AI/human distinction
+  - Add role selection dropdown and status indicators
+  - Write UI tests for chat interface functionality
+  - _Requirements: 8.1, 8.8, 8.3_
+
+- [ ] 20. Implement human player timeout and inactivity handling
+  - Add timeout detection for inactive human players
+  - Implement graceful simulation continuation when human is inactive
+  - Create notification system for human player when events require attention
+  - Write tests for timeout scenarios and simulation continuity
+  - _Requirements: 8.7_
+
+- [ ] 21. Integrate human player with event system
+  - Connect human player to event notifications based on their role
+  - Implement human player participation in event resolution
+  - Add human input influence on agent decision-making and outcomes
+  - Write integration tests for human player event participation
+  - _Requirements: 8.3, 8.6_
+
+- [ ] 22. Add comprehensive error handling and recovery
   - Implement OpenAI API failure handling with retry logic and rate limiting
   - Add agent communication error recovery and escalation mechanisms
   - Create session state corruption recovery and reset procedures
+  - Add human player chat input validation and sanitization
   - Write tests for error scenarios and recovery procedures
   - _Requirements: 6.4, 7.6_
 
-- [ ] 17. Implement system performance optimization
+- [ ] 23. Implement system performance optimization
   - Add OpenAI API rate limiting and cost optimization
   - Implement caching for frequently accessed session state data
   - Optimize agent prompt engineering for efficient token usage
+  - Add human player chat message caching and conversation history management
   - Write performance tests and OpenAI API usage benchmarking
   - _Requirements: 6.4_
 
-- [ ] 18. Create comprehensive test scenarios and validation
+- [ ] 24. Create comprehensive test scenarios and validation
   - Implement complex multi-agent event scenarios for testing
   - Create automated test scenarios for different event types
   - Add system stress testing with multiple simultaneous events
-  - Write user acceptance tests for complete workflow validation
-  - _Requirements: 1.4, 5.5, 7.5_
+  - Add human player participation scenarios in automated tests
+  - Write user acceptance tests for complete workflow validation including human player roles
+  - _Requirements: 1.4, 5.5, 7.5, 8.6_

@@ -2,8 +2,8 @@
 
 import pytest
 from datetime import datetime
-from models.core import Agent, Event, MetricsSnapshot, SimulationState
-from models.enums import AgentRole, AgentState, EventType, ResolutionStatus, DinosaurSpecies
+from models.core import Agent, Event, MetricsSnapshot, SimulationState, ChatMessage, HumanAgent
+from models.enums import AgentRole, AgentState, EventType, ResolutionStatus, DinosaurSpecies, MessageType
 from models.config import Location
 
 
@@ -225,12 +225,19 @@ class TestSimulationState:
         location = Location(x=0.0, y=0.0, zone="test")
         event = Event(id="test_event", type=EventType.DINOSAUR_ESCAPE, severity=5, location=location)
         metrics = MetricsSnapshot(visitor_satisfaction=0.8)
+        human_player = HumanAgent(
+            id="human_1",
+            name="Player",
+            role=AgentRole.PARK_RANGER,
+            location=location
+        )
         
         state = SimulationState(
             is_running=True,
             active_events=[event],
             agent_count=10,
             current_metrics=metrics,
+            human_player=human_player,
             simulation_id="sim_1"
         )
         
@@ -238,6 +245,7 @@ class TestSimulationState:
         assert len(state.active_events) == 1
         assert state.agent_count == 10
         assert state.current_metrics.visitor_satisfaction == 0.8
+        assert state.human_player.name == "Player"
     
     def test_simulation_state_validation_negative_agent_count(self):
         """Test simulation state validation with negative agent count."""
@@ -249,12 +257,19 @@ class TestSimulationState:
         location = Location(x=10.0, y=20.0, zone="paddock")
         event = Event(id="event_1", type=EventType.FACILITY_POWER_OUTAGE, severity=7, location=location)
         metrics = MetricsSnapshot(visitor_satisfaction=0.6, facility_efficiency=0.3)
+        human_player = HumanAgent(
+            id="human_test",
+            name="Test Player",
+            role=AgentRole.VETERINARIAN,
+            location=location
+        )
         
         original_state = SimulationState(
             is_running=False,
             active_events=[event],
             agent_count=15,
             current_metrics=metrics,
+            human_player=human_player,
             simulation_id="sim_test"
         )
         
@@ -263,6 +278,7 @@ class TestSimulationState:
         assert state_dict["is_running"] is False
         assert state_dict["agent_count"] == 15
         assert len(state_dict["active_events"]) == 1
+        assert state_dict["human_player"]["name"] == "Test Player"
         
         # Test deserialization
         restored_state = SimulationState.from_dict(state_dict)
@@ -270,3 +286,425 @@ class TestSimulationState:
         assert restored_state.agent_count == original_state.agent_count
         assert len(restored_state.active_events) == len(original_state.active_events)
         assert restored_state.current_metrics.visitor_satisfaction == original_state.current_metrics.visitor_satisfaction
+        assert restored_state.human_player.name == original_state.human_player.name
+        assert restored_state.human_player.role == original_state.human_player.role
+    
+    def test_simulation_state_serialization_no_human_player(self):
+        """Test simulation state serialization without human player."""
+        location = Location(x=5.0, y=15.0, zone="entrance")
+        event = Event(id="event_2", type=EventType.VISITOR_COMPLAINT, severity=3, location=location)
+        metrics = MetricsSnapshot(visitor_satisfaction=0.9)
+        
+        original_state = SimulationState(
+            is_running=True,
+            active_events=[event],
+            agent_count=8,
+            current_metrics=metrics,
+            human_player=None,  # No human player
+            simulation_id="sim_no_human"
+        )
+        
+        # Test serialization
+        state_dict = original_state.to_dict()
+        assert state_dict["human_player"] is None
+        
+        # Test deserialization
+        restored_state = SimulationState.from_dict(state_dict)
+        assert restored_state.human_player is None
+        assert restored_state.agent_count == original_state.agent_count
+
+
+class TestChatMessage:
+    """Test cases for ChatMessage model."""
+    
+    def test_chat_message_creation_valid(self):
+        """Test creating a valid chat message."""
+        message = ChatMessage(
+            id="msg_1",
+            sender_id="human_1",
+            sender_name="Player",
+            content="Hello, I need help with the dinosaur situation!",
+            message_type=MessageType.HUMAN,
+            conversation_id="conv_1"
+        )
+        
+        assert message.id == "msg_1"
+        assert message.sender_id == "human_1"
+        assert message.sender_name == "Player"
+        assert message.content == "Hello, I need help with the dinosaur situation!"
+        assert message.message_type == MessageType.HUMAN
+        assert message.conversation_id == "conv_1"
+        assert isinstance(message.timestamp, datetime)
+    
+    def test_chat_message_default_values(self):
+        """Test chat message with default values."""
+        message = ChatMessage(
+            id="msg_2",
+            sender_id="ai_agent_1",
+            sender_name="Ranger Smith",
+            content="I'm on my way to help!"
+        )
+        
+        assert message.message_type == MessageType.AI_AGENT  # Default value
+        assert message.conversation_id == ""  # Default value
+        assert isinstance(message.timestamp, datetime)
+    
+    def test_chat_message_validation_empty_id(self):
+        """Test chat message validation with empty ID."""
+        with pytest.raises(ValueError, match="Message ID cannot be empty"):
+            ChatMessage(
+                id="",
+                sender_id="human_1",
+                sender_name="Player",
+                content="Test message"
+            )
+    
+    def test_chat_message_validation_empty_sender_id(self):
+        """Test chat message validation with empty sender ID."""
+        with pytest.raises(ValueError, match="Sender ID cannot be empty"):
+            ChatMessage(
+                id="msg_1",
+                sender_id="",
+                sender_name="Player",
+                content="Test message"
+            )
+    
+    def test_chat_message_validation_empty_sender_name(self):
+        """Test chat message validation with empty sender name."""
+        with pytest.raises(ValueError, match="Sender name cannot be empty"):
+            ChatMessage(
+                id="msg_1",
+                sender_id="human_1",
+                sender_name="",
+                content="Test message"
+            )
+    
+    def test_chat_message_validation_empty_content(self):
+        """Test chat message validation with empty content."""
+        with pytest.raises(ValueError, match="Message content cannot be empty"):
+            ChatMessage(
+                id="msg_1",
+                sender_id="human_1",
+                sender_name="Player",
+                content=""
+            )
+        
+        with pytest.raises(ValueError, match="Message content cannot be empty"):
+            ChatMessage(
+                id="msg_1",
+                sender_id="human_1",
+                sender_name="Player",
+                content="   "  # Only whitespace
+            )
+    
+    def test_chat_message_serialization(self):
+        """Test chat message to_dict and from_dict methods."""
+        original_message = ChatMessage(
+            id="msg_3",
+            sender_id="system",
+            sender_name="System",
+            content="Event notification: Dinosaur escape in Paddock A",
+            message_type=MessageType.SYSTEM,
+            conversation_id="emergency_conv"
+        )
+        
+        # Test serialization
+        message_dict = original_message.to_dict()
+        assert message_dict["id"] == "msg_3"
+        assert message_dict["sender_id"] == "system"
+        assert message_dict["message_type"] == "SYSTEM"
+        assert message_dict["conversation_id"] == "emergency_conv"
+        
+        # Test deserialization
+        restored_message = ChatMessage.from_dict(message_dict)
+        assert restored_message.id == original_message.id
+        assert restored_message.sender_id == original_message.sender_id
+        assert restored_message.sender_name == original_message.sender_name
+        assert restored_message.content == original_message.content
+        assert restored_message.message_type == original_message.message_type
+        assert restored_message.conversation_id == original_message.conversation_id
+
+
+class TestHumanAgent:
+    """Test cases for HumanAgent model."""
+    
+    def test_human_agent_creation_valid(self):
+        """Test creating a valid human agent."""
+        location = Location(x=5.0, y=10.0, zone="visitor_center")
+        message = ChatMessage(
+            id="msg_1",
+            sender_id="human_1",
+            sender_name="Player",
+            content="I'm ready to help!",
+            message_type=MessageType.HUMAN
+        )
+        
+        human_agent = HumanAgent(
+            id="human_1",
+            name="Player",
+            role=AgentRole.PARK_RANGER,
+            location=location,
+            chat_history=[message],
+            conversation_access=["conv_1", "conv_2"]
+        )
+        
+        assert human_agent.id == "human_1"
+        assert human_agent.name == "Player"
+        assert human_agent.role == AgentRole.PARK_RANGER
+        assert human_agent.is_human_controlled is True
+        assert len(human_agent.chat_history) == 1
+        assert len(human_agent.conversation_access) == 2
+        assert "conv_1" in human_agent.conversation_access
+    
+    def test_human_agent_default_values(self):
+        """Test human agent with default values."""
+        location = Location(x=0.0, y=0.0, zone="entrance")
+        human_agent = HumanAgent(
+            id="human_2",
+            name="Test Player",
+            role=AgentRole.SECURITY,
+            location=location
+        )
+        
+        assert human_agent.is_human_controlled is True
+        assert len(human_agent.chat_history) == 0
+        assert len(human_agent.conversation_access) == 0
+    
+    def test_human_agent_inherits_agent_validation(self):
+        """Test that human agent inherits base agent validation."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        
+        # Test empty ID validation
+        with pytest.raises(ValueError, match="Agent ID cannot be empty"):
+            HumanAgent(id="", name="Player", role=AgentRole.TOURIST, location=location)
+        
+        # Test empty name validation
+        with pytest.raises(ValueError, match="Agent name cannot be empty"):
+            HumanAgent(id="human_1", name="", role=AgentRole.TOURIST, location=location)
+    
+    def test_human_agent_validation_invalid_chat_history(self):
+        """Test human agent validation with invalid chat history."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        
+        with pytest.raises(ValueError, match="All chat history items must be ChatMessage instances"):
+            HumanAgent(
+                id="human_1",
+                name="Player",
+                role=AgentRole.TOURIST,
+                location=location,
+                chat_history=["not a ChatMessage"]
+            )
+    
+    def test_human_agent_validation_invalid_conversation_access(self):
+        """Test human agent validation with invalid conversation access."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        
+        with pytest.raises(ValueError, match="All conversation access IDs must be strings"):
+            HumanAgent(
+                id="human_1",
+                name="Player",
+                role=AgentRole.TOURIST,
+                location=location,
+                conversation_access=[123, "conv_1"]  # 123 is not a string
+            )
+    
+    def test_human_agent_add_chat_message(self):
+        """Test adding chat messages to human agent."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        human_agent = HumanAgent(
+            id="human_1",
+            name="Player",
+            role=AgentRole.TOURIST,
+            location=location
+        )
+        
+        message = ChatMessage(
+            id="msg_1",
+            sender_id="human_1",
+            sender_name="Player",
+            content="Test message"
+        )
+        
+        initial_activity = human_agent.last_activity
+        human_agent.add_chat_message(message)
+        
+        assert len(human_agent.chat_history) == 1
+        assert human_agent.chat_history[0] == message
+        assert human_agent.last_activity > initial_activity
+    
+    def test_human_agent_add_invalid_chat_message(self):
+        """Test adding invalid chat message to human agent."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        human_agent = HumanAgent(
+            id="human_1",
+            name="Player",
+            role=AgentRole.TOURIST,
+            location=location
+        )
+        
+        with pytest.raises(ValueError, match="Message must be a ChatMessage instance"):
+            human_agent.add_chat_message("not a ChatMessage")
+    
+    def test_human_agent_get_recent_messages(self):
+        """Test getting recent messages from human agent."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        human_agent = HumanAgent(
+            id="human_1",
+            name="Player",
+            role=AgentRole.TOURIST,
+            location=location
+        )
+        
+        # Add multiple messages
+        for i in range(5):
+            message = ChatMessage(
+                id=f"msg_{i}",
+                sender_id="human_1",
+                sender_name="Player",
+                content=f"Message {i}"
+            )
+            human_agent.add_chat_message(message)
+        
+        # Test getting recent messages with limit
+        recent = human_agent.get_recent_messages(limit=3)
+        assert len(recent) == 3
+        assert recent[0].content == "Message 2"  # Last 3 messages
+        assert recent[2].content == "Message 4"
+        
+        # Test getting all messages
+        all_messages = human_agent.get_recent_messages(limit=10)
+        assert len(all_messages) == 5
+        
+        # Test empty chat history
+        empty_agent = HumanAgent(
+            id="human_2",
+            name="Empty Player",
+            role=AgentRole.TOURIST,
+            location=location
+        )
+        empty_recent = empty_agent.get_recent_messages()
+        assert len(empty_recent) == 0
+    
+    def test_human_agent_conversation_access_management(self):
+        """Test conversation access management methods."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        human_agent = HumanAgent(
+            id="human_1",
+            name="Player",
+            role=AgentRole.TOURIST,
+            location=location
+        )
+        
+        # Test adding conversation access
+        human_agent.add_conversation_access("conv_1")
+        assert human_agent.has_conversation_access("conv_1")
+        assert len(human_agent.conversation_access) == 1
+        
+        # Test adding duplicate conversation access
+        human_agent.add_conversation_access("conv_1")
+        assert len(human_agent.conversation_access) == 1  # Should not duplicate
+        
+        # Test adding multiple conversations
+        human_agent.add_conversation_access("conv_2")
+        human_agent.add_conversation_access("conv_3")
+        assert len(human_agent.conversation_access) == 3
+        
+        # Test removing conversation access
+        human_agent.remove_conversation_access("conv_2")
+        assert not human_agent.has_conversation_access("conv_2")
+        assert len(human_agent.conversation_access) == 2
+        
+        # Test removing non-existent conversation access
+        human_agent.remove_conversation_access("conv_nonexistent")
+        assert len(human_agent.conversation_access) == 2  # Should remain unchanged
+    
+    def test_human_agent_conversation_access_validation(self):
+        """Test conversation access validation."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        human_agent = HumanAgent(
+            id="human_1",
+            name="Player",
+            role=AgentRole.TOURIST,
+            location=location
+        )
+        
+        with pytest.raises(ValueError, match="Conversation ID must be a string"):
+            human_agent.add_conversation_access(123)
+    
+    def test_human_agent_clear_chat_history(self):
+        """Test clearing chat history."""
+        location = Location(x=0.0, y=0.0, zone="test")
+        human_agent = HumanAgent(
+            id="human_1",
+            name="Player",
+            role=AgentRole.TOURIST,
+            location=location
+        )
+        
+        # Add some messages
+        for i in range(3):
+            message = ChatMessage(
+                id=f"msg_{i}",
+                sender_id="human_1",
+                sender_name="Player",
+                content=f"Message {i}"
+            )
+            human_agent.add_chat_message(message)
+        
+        assert len(human_agent.chat_history) == 3
+        
+        # Clear history
+        human_agent.clear_chat_history()
+        assert len(human_agent.chat_history) == 0
+    
+    def test_human_agent_serialization(self):
+        """Test human agent to_dict and from_dict methods."""
+        location = Location(x=15.0, y=25.0, zone="security_office", description="Main security hub")
+        message1 = ChatMessage(
+            id="msg_1",
+            sender_id="human_1",
+            sender_name="Security Chief",
+            content="Situation under control",
+            message_type=MessageType.HUMAN,
+            conversation_id="security_conv"
+        )
+        message2 = ChatMessage(
+            id="msg_2",
+            sender_id="ai_ranger",
+            sender_name="Ranger AI",
+            content="Thanks for the update",
+            message_type=MessageType.AI_AGENT,
+            conversation_id="security_conv"
+        )
+        
+        original_human = HumanAgent(
+            id="human_security",
+            name="Security Chief",
+            role=AgentRole.SECURITY,
+            personality_traits={"leadership": 0.9, "brave": 0.8},
+            current_state=AgentState.ACTIVE,
+            location=location,
+            capabilities=["threat_assessment", "emergency_response"],
+            is_human_controlled=True,
+            chat_history=[message1, message2],
+            conversation_access=["security_conv", "emergency_conv"]
+        )
+        
+        # Test serialization
+        human_dict = original_human.to_dict()
+        assert human_dict["id"] == "human_security"
+        assert human_dict["role"] == "SECURITY"
+        assert human_dict["is_human_controlled"] is True
+        assert len(human_dict["chat_history"]) == 2
+        assert len(human_dict["conversation_access"]) == 2
+        assert human_dict["chat_history"][0]["content"] == "Situation under control"
+        
+        # Test deserialization
+        restored_human = HumanAgent.from_dict(human_dict)
+        assert restored_human.id == original_human.id
+        assert restored_human.role == original_human.role
+        assert restored_human.is_human_controlled == original_human.is_human_controlled
+        assert len(restored_human.chat_history) == len(original_human.chat_history)
+        assert len(restored_human.conversation_access) == len(original_human.conversation_access)
+        assert restored_human.chat_history[0].content == original_human.chat_history[0].content
+        assert restored_human.conversation_access == original_human.conversation_access

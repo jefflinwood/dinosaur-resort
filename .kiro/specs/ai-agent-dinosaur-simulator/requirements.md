@@ -94,3 +94,19 @@ The AI Agent Dinosaur Simulator is a SimCity-style simulation game featuring a d
 4. WHEN an event is resolved THEN the system SHALL display a summary of actions taken and outcomes
 5. WHEN multiple events occur simultaneously THEN the system SHALL handle each event resolution independently
 6. IF an event cannot be resolved THEN the system SHALL escalate or provide alternative resolution paths
+
+### Requirement 8
+
+**User Story:** As a player, I want to take on the role of one of the agent categories and participate directly in the simulation through chat, so that I can influence events and interact with other AI agents as a human participant.
+
+#### Acceptance Criteria
+
+1. WHEN starting a simulation THEN the player SHALL be able to select an agent category to role-play (staff member, visitor, or dinosaur handler)
+2. WHEN the player selects a role THEN the system SHALL create a human-controlled agent with the appropriate role characteristics
+3. WHEN events occur THEN the human player SHALL receive notifications and be able to respond through a chat interface
+4. WHEN the player sends chat messages THEN the system SHALL integrate their responses into the ag2 agent conversation flow
+5. WHEN other AI agents communicate THEN the human player SHALL see relevant messages directed to their role
+6. WHEN the player participates in conversations THEN their input SHALL influence event resolution and agent decision-making
+7. WHEN the player is inactive during an event THEN the system SHALL continue the simulation without blocking on human input
+8. WHEN displaying the chat interface THEN the system SHALL clearly distinguish between AI agent messages and human player messages
+9. WHEN the player changes roles THEN the system SHALL update their permissions and conversation access accordingly

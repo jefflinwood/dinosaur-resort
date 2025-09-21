@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-from models.enums import AgentRole, AgentState, EventType, ResolutionStatus, DinosaurSpecies
+from models.enums import AgentRole, AgentState, EventType, ResolutionStatus, DinosaurSpecies, MessageType
 from models.config import Location
 
 
@@ -187,6 +187,185 @@ class MetricsSnapshot:
 
 
 @dataclass
+class ChatMessage:
+    """Represents a chat message in human-AI communication."""
+    id: str
+    sender_id: str
+    sender_name: str
+    content: str
+    timestamp: datetime = field(default_factory=datetime.now)
+    message_type: MessageType = MessageType.AI_AGENT
+    conversation_id: str = ""
+    
+    def __post_init__(self):
+        """Validate chat message data after initialization."""
+        if not self.id:
+            raise ValueError("Message ID cannot be empty")
+        if not self.sender_id:
+            raise ValueError("Sender ID cannot be empty")
+        if not self.sender_name:
+            raise ValueError("Sender name cannot be empty")
+        if not self.content.strip():
+            raise ValueError("Message content cannot be empty")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert chat message to dictionary for serialization."""
+        return {
+            "id": self.id,
+            "sender_id": self.sender_id,
+            "sender_name": self.sender_name,
+            "content": self.content,
+            "timestamp": self.timestamp.isoformat(),
+            "message_type": self.message_type.name,
+            "conversation_id": self.conversation_id
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ChatMessage':
+        """Create chat message from dictionary."""
+        return cls(
+            id=data["id"],
+            sender_id=data["sender_id"],
+            sender_name=data["sender_name"],
+            content=data["content"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            message_type=MessageType[data["message_type"]],
+            conversation_id=data["conversation_id"]
+        )
+
+
+@dataclass
+class HumanAgent(Agent):
+    """Represents a human player agent extending the base Agent model."""
+    is_human_controlled: bool = field(default=True)
+    chat_history: List[ChatMessage] = field(default_factory=list)
+    conversation_access: List[str] = field(default_factory=list)  # Conversation IDs the human can see
+    
+    def __post_init__(self):
+        """Validate human agent data after initialization."""
+        # Call parent validation first
+        super().__post_init__()
+        
+        # Validate human-specific fields
+        if not isinstance(self.is_human_controlled, bool):
+            raise ValueError("is_human_controlled must be a boolean")
+        
+        # Validate chat history
+        for message in self.chat_history:
+            if not isinstance(message, ChatMessage):
+                raise ValueError("All chat history items must be ChatMessage instances")
+        
+        # Validate conversation access
+        for conv_id in self.conversation_access:
+            if not isinstance(conv_id, str):
+                raise ValueError("All conversation access IDs must be strings")
+    
+    def add_chat_message(self, message: ChatMessage) -> None:
+        """Add a chat message to the history.
+        
+        Args:
+            message: ChatMessage to add
+        """
+        if not isinstance(message, ChatMessage):
+            raise ValueError("Message must be a ChatMessage instance")
+        
+        self.chat_history.append(message)
+        self.last_activity = datetime.now()
+    
+    def get_recent_messages(self, limit: int = 50) -> List[ChatMessage]:
+        """Get recent chat messages.
+        
+        Args:
+            limit: Maximum number of messages to return
+            
+        Returns:
+            List of recent ChatMessage instances
+        """
+        return self.chat_history[-limit:] if self.chat_history else []
+    
+    def add_conversation_access(self, conversation_id: str) -> None:
+        """Add access to a conversation.
+        
+        Args:
+            conversation_id: ID of the conversation to grant access to
+        """
+        if not isinstance(conversation_id, str):
+            raise ValueError("Conversation ID must be a string")
+        
+        if conversation_id not in self.conversation_access:
+            self.conversation_access.append(conversation_id)
+    
+    def remove_conversation_access(self, conversation_id: str) -> None:
+        """Remove access to a conversation.
+        
+        Args:
+            conversation_id: ID of the conversation to remove access from
+        """
+        if conversation_id in self.conversation_access:
+            self.conversation_access.remove(conversation_id)
+    
+    def has_conversation_access(self, conversation_id: str) -> bool:
+        """Check if human has access to a conversation.
+        
+        Args:
+            conversation_id: ID of the conversation to check
+            
+        Returns:
+            True if human has access, False otherwise
+        """
+        return conversation_id in self.conversation_access
+    
+    def clear_chat_history(self) -> None:
+        """Clear all chat history."""
+        self.chat_history.clear()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert human agent to dictionary for serialization."""
+        # Get base agent dictionary
+        base_dict = super().to_dict()
+        
+        # Add human-specific fields
+        base_dict.update({
+            "is_human_controlled": self.is_human_controlled,
+            "chat_history": [message.to_dict() for message in self.chat_history],
+            "conversation_access": self.conversation_access
+        })
+        
+        return base_dict
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'HumanAgent':
+        """Create human agent from dictionary."""
+        # Extract location data
+        location_data = data["location"]
+        location = Location(
+            x=location_data["x"],
+            y=location_data["y"],
+            zone=location_data["zone"],
+            description=location_data.get("description", "")
+        )
+        
+        # Extract chat history
+        chat_history = [ChatMessage.from_dict(msg_data) for msg_data in data.get("chat_history", [])]
+        
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            role=AgentRole[data["role"]],
+            personality_traits=data["personality_traits"],
+            current_state=AgentState[data["current_state"]],
+            location=location,
+            capabilities=data["capabilities"],
+            species=DinosaurSpecies[data["species"]] if data["species"] else None,
+            created_at=datetime.fromisoformat(data["created_at"]),
+            last_activity=datetime.fromisoformat(data["last_activity"]),
+            is_human_controlled=data.get("is_human_controlled", True),
+            chat_history=chat_history,
+            conversation_access=data.get("conversation_access", [])
+        )
+
+
+@dataclass
 class SimulationState:
     """Represents the current state of the simulation."""
     is_running: bool = False
@@ -194,6 +373,7 @@ class SimulationState:
     active_events: List[Event] = field(default_factory=list)
     agent_count: int = 0
     current_metrics: Optional[MetricsSnapshot] = None
+    human_player: Optional[HumanAgent] = None
     simulation_id: str = ""
     started_at: Optional[datetime] = None
     
@@ -210,6 +390,7 @@ class SimulationState:
             "active_events": [event.to_dict() for event in self.active_events],
             "agent_count": self.agent_count,
             "current_metrics": self.current_metrics.to_dict() if self.current_metrics else None,
+            "human_player": self.human_player.to_dict() if self.human_player else None,
             "simulation_id": self.simulation_id,
             "started_at": self.started_at.isoformat() if self.started_at else None
         }
@@ -219,6 +400,7 @@ class SimulationState:
         """Create simulation state from dictionary."""
         active_events = [Event.from_dict(event_data) for event_data in data["active_events"]]
         current_metrics = MetricsSnapshot.from_dict(data["current_metrics"]) if data["current_metrics"] else None
+        human_player = HumanAgent.from_dict(data["human_player"]) if data["human_player"] else None
         
         return cls(
             is_running=data["is_running"],
@@ -226,6 +408,7 @@ class SimulationState:
             active_events=active_events,
             agent_count=data["agent_count"],
             current_metrics=current_metrics,
+            human_player=human_player,
             simulation_id=data["simulation_id"],
             started_at=datetime.fromisoformat(data["started_at"]) if data["started_at"] else None
         )

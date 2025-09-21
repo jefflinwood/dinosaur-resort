@@ -11,13 +11,17 @@ The system follows a layered architecture with the following main components:
 ```mermaid
 graph TB
     UI[Streamlit Dashboard] --> SM[Simulation Manager]
+    UI --> HPI[Human Player Interface]
+    HPI --> HPM[Human Player Manager]
     SM --> AM[Agent Manager]
     SM --> EM[Event Manager]
     SM --> MM[Metrics Manager]
     AM --> AG2[ag2 Framework + OpenAI]
+    HPM --> AG2
     AG2 --> A1[Staff Agents]
     AG2 --> A2[Visitor Agents]
     AG2 --> A3[Dinosaur Agents]
+    AG2 --> A4[Human Player Agent]
     EM --> ES[Event System]
     MM --> MS[Memory Store]
     MS --> SS[Streamlit Session State]
@@ -120,13 +124,44 @@ class MetricsManager:
     def get_metric_history(self, metric_name: str, timeframe: str) -> List[MetricPoint]
 ```
 
-### 5. Streamlit Dashboard
+### 5. Human Player Manager
+
+**Purpose**: Manages human player participation in the simulation as an agent
+
+**Key Responsibilities**:
+- Handle human player role selection and agent creation
+- Bridge human chat input with ag2 agent conversation system
+- Manage human player permissions and conversation access
+- Handle graceful degradation when human player is inactive
+
+**Interface**:
+```python
+class HumanPlayerManager:
+    def create_human_agent(self, role: AgentRole, player_name: str) -> HumanAgent
+    def process_human_input(self, message: str, context: ConversationContext) -> None
+    def get_relevant_conversations(self, human_agent_id: str) -> List[Conversation]
+    def update_human_role(self, new_role: AgentRole) -> None
+    def handle_player_inactivity(self, timeout_seconds: int) -> None
+```
+
+### 6. Human Player Interface
+
+**Purpose**: Provides chat interface for human player participation
+
+**Key Components**:
+- **Role Selection**: Choose agent category (staff, visitor, dinosaur handler)
+- **Chat Interface**: Real-time messaging with AI agents
+- **Conversation History**: Display of relevant agent conversations
+- **Status Indicator**: Shows human player's current role and activity status
+
+### 7. Streamlit Dashboard
 
 **Purpose**: Provides interactive user interface for simulation control and monitoring
 
 **Key Components**:
 - **Control Panel**: Event triggering, simulation controls
 - **Agent Monitor**: Real-time agent status and conversations
+- **Human Player Panel**: Role selection and chat interface
 - **Metrics Dashboard**: Current and historical performance data
 - **Event Log**: History of triggered events and their resolutions
 
@@ -143,6 +178,13 @@ class Agent:
     current_state: AgentState
     location: Location
     capabilities: List[str]
+
+@dataclass
+class HumanAgent(Agent):
+    is_human_controlled: bool = True
+    last_activity: datetime
+    chat_history: List[ChatMessage]
+    conversation_access: List[str]  # Conversation IDs the human can see
 ```
 
 ### Event Model
@@ -170,6 +212,19 @@ class MetricsSnapshot:
     timestamp: datetime
 ```
 
+### Chat Message Model
+```python
+@dataclass
+class ChatMessage:
+    id: str
+    sender_id: str
+    sender_name: str
+    content: str
+    timestamp: datetime
+    message_type: MessageType  # HUMAN, AI_AGENT, SYSTEM
+    conversation_id: str
+```
+
 ### Simulation State Model
 ```python
 @dataclass
@@ -178,6 +233,7 @@ class SimulationState:
     current_time: datetime
     active_events: List[Event]
     agent_count: int
+    human_player: Optional[HumanAgent]
     current_metrics: MetricsSnapshot
 ```
 
@@ -193,15 +249,23 @@ class SimulationState:
 - **Partial Failure Handling**: Events can be partially processed if some agents are unavailable
 - **Recovery Mechanisms**: Failed events can be retried or escalated
 
+### Human Player Integration Errors
+- **Chat Input Validation**: Validate and sanitize human player chat messages
+- **Role Switching**: Handle errors during role changes gracefully
+- **Conversation Access**: Ensure human players only see authorized conversations
+- **Timeout Handling**: Manage simulation continuation when human player is inactive
+
 ### UI Responsiveness
 - **Async Operations**: Long-running operations use Streamlit's async capabilities
 - **Progress Indicators**: Show progress for operations that take time
 - **Error Messages**: Clear, actionable error messages for users
+- **Real-time Chat**: Ensure chat interface updates in real-time without blocking
 
 ### Session State Management
 - **State Persistence**: All data persists in Streamlit session state during the session
 - **State Validation**: Session state is validated on each interaction
 - **Reset Mechanisms**: Clean session reset functionality for new simulations
+- **Human Player State**: Maintain human player role and chat history across interactions
 
 ## Testing Strategy
 
@@ -213,9 +277,11 @@ class SimulationState:
 
 ### Integration Testing
 - **ag2 Framework Integration**: Test agent communication through ag2 with OpenAI
+- **Human-AI Agent Integration**: Test human player participation in ag2 conversations
 - **Session State Operations**: Verify data persistence in Streamlit session state
 - **Event Flow**: Test complete event lifecycle from trigger to resolution
 - **UI Integration**: Test Streamlit dashboard interactions
+- **Chat Interface Integration**: Test real-time chat functionality with agent conversations
 
 ### System Testing
 - **Multi-Agent Scenarios**: Test complex scenarios with multiple agents
@@ -237,6 +303,13 @@ class SimulationState:
 - Implement custom agent roles using ag2's role-based messaging
 - Use ag2's built-in logging for debugging and monitoring agent interactions
 - Configure OpenAI API integration for agent reasoning and responses
+
+### Human Player Integration with ag2
+- Create HumanAgent class that extends ag2's ConversableAgent but overrides message generation
+- Integrate human chat input into ag2's conversation flow using custom message handling
+- Implement conversation filtering to show only relevant messages to human players
+- Use ag2's GroupChat manager to coordinate between human and AI agents
+- Handle human player timeouts by allowing AI agents to continue without human input
 
 ### Streamlit Dashboard Design
 - Implement real-time updates using Streamlit's session state

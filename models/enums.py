@@ -66,3 +66,10 @@ class PersonalityTrait(Enum):
     LEADERSHIP = "leadership"
     EMPATHY = "empathy"
     TECHNICAL = "technical"
+
+
+class MessageType(Enum):
+    """Defines the types of messages in human-AI communication."""
+    HUMAN = auto()
+    AI_AGENT = auto()
+    SYSTEM = auto()
