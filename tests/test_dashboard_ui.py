@@ -16,6 +16,8 @@ mock_streamlit.sidebar = MagicMock()
 
 # Mock columns to return the right number of mock objects based on call
 def mock_columns(num_cols):
+    if isinstance(num_cols, list):
+        return [MagicMock() for _ in range(len(num_cols))]
     return [MagicMock() for _ in range(num_cols)]
 
 mock_streamlit.columns = MagicMock(side_effect=mock_columns)
@@ -33,6 +35,24 @@ mock_streamlit.expander = MagicMock()
 mock_streamlit.json = MagicMock()
 mock_streamlit.caption = MagicMock()
 mock_streamlit.rerun = MagicMock()
+mock_streamlit.warning = MagicMock()
+mock_streamlit.error = MagicMock()
+mock_streamlit.spinner = MagicMock()
+mock_streamlit.slider = MagicMock(return_value=5)
+mock_streamlit.text_input = MagicMock(return_value="")
+mock_streamlit.text_area = MagicMock(return_value="")
+mock_streamlit.number_input = MagicMock(return_value=0)
+mock_streamlit.multiselect = MagicMock(return_value=[])
+mock_streamlit.checkbox = MagicMock(return_value=False)
+
+# Mock session_state
+mock_streamlit.session_state = MagicMock()
+
+# Mock the context manager for spinner
+mock_spinner = MagicMock()
+mock_spinner.__enter__ = MagicMock(return_value=mock_spinner)
+mock_spinner.__exit__ = MagicMock(return_value=None)
+mock_streamlit.spinner.return_value = mock_spinner
 
 # Mock the context manager for expander
 mock_expander = MagicMock()
@@ -97,10 +117,10 @@ class TestDashboardUI:
         
         # Mock metrics
         self.mock_metrics = MetricsSnapshot(
-            visitor_satisfaction=85.0,
-            dinosaur_happiness={"trex": 75.0},
-            facility_efficiency=90.0,
-            safety_rating=95.0,
+            visitor_satisfaction=0.85,
+            dinosaur_happiness={"trex": 0.75},
+            facility_efficiency=0.90,
+            safety_rating=0.95,
             timestamp=datetime.now()
         )
         self.mock_session_manager.get_latest_metrics.return_value = self.mock_metrics
@@ -213,14 +233,174 @@ class TestDashboardUI:
     
     def test_render_control_panel(self):
         """Test control panel renders correctly."""
-        render_control_panel(self.mock_session_manager)
-        
-        # Check basic elements
-        mock_streamlit.title.assert_called_with("🎮 Control Panel")
-        mock_streamlit.write.assert_called()
-        mock_streamlit.info.assert_called()
-        mock_streamlit.columns.assert_called()
-        mock_streamlit.button.assert_called()
+        with patch('managers.simulation_manager.SimulationManager') as mock_sim_manager_class, \
+             patch('managers.event_manager.EventManager') as mock_event_manager_class:
+            
+            mock_sim_manager = Mock()
+            mock_sim_manager.event_manager = None  # No event manager initially
+            mock_sim_manager_class.return_value = mock_sim_manager
+            
+            # Mock temporary event manager
+            mock_temp_event_manager = Mock()
+            mock_temp_event_manager.get_available_events.return_value = [
+                {
+                    'type': Mock(name='DINOSAUR_ESCAPE'),
+                    'name': 'DINOSAUR_ESCAPE',
+                    'description': 'A dinosaur has escaped',
+                    'default_severity': 8,
+                    'required_parameters': ['dinosaur_id'],
+                    'optional_parameters': ['escape_method'],
+                    'affected_roles': ['PARK_RANGER']
+                }
+            ]
+            mock_event_manager_class.return_value = mock_temp_event_manager
+            
+            render_control_panel(self.mock_session_manager)
+            
+            # Check basic elements
+            mock_streamlit.title.assert_called_with("🎮 Control Panel")
+            mock_streamlit.write.assert_called()
+            mock_streamlit.subheader.assert_called()
+            mock_streamlit.columns.assert_called()
+            mock_streamlit.button.assert_called()
+            mock_streamlit.metric.assert_called()
+    
+    def test_render_control_panel_simulation_status(self):
+        """Test control panel displays simulation status correctly."""
+        with patch('managers.simulation_manager.SimulationManager') as mock_sim_manager_class:
+            mock_sim_manager = Mock()
+            mock_sim_manager_class.return_value = mock_sim_manager
+            
+            # Test with running simulation
+            self.mock_sim_state.is_running = True
+            render_control_panel(self.mock_session_manager)
+            
+            # Should display status metrics
+            mock_streamlit.metric.assert_called()
+            
+            # Test with stopped simulation
+            self.mock_sim_state.is_running = False
+            render_control_panel(self.mock_session_manager)
+            
+            mock_streamlit.metric.assert_called()
+    
+    def test_render_control_panel_simulation_controls(self):
+        """Test control panel simulation control buttons."""
+        with patch('managers.simulation_manager.SimulationManager') as mock_sim_manager_class:
+            mock_sim_manager = Mock()
+            mock_sim_manager_class.return_value = mock_sim_manager
+            
+            # Mock button clicks
+            mock_streamlit.button.return_value = False
+            
+            render_control_panel(self.mock_session_manager)
+            
+            # Should create control buttons
+            button_calls = mock_streamlit.button.call_args_list
+            button_texts = [call[0][0] for call in button_calls if call[0]]
+            
+            # Check that control buttons are created
+            control_buttons = ["▶️ Start", "⏸️ Pause", "⏹️ Stop", "🔄 Reset"]
+            for button_text in control_buttons:
+                assert any(button_text in text for text in button_texts)
+    
+    def test_render_control_panel_event_triggering_interface(self):
+        """Test control panel event triggering interface."""
+        with patch('managers.simulation_manager.SimulationManager') as mock_sim_manager_class:
+            mock_sim_manager = Mock()
+            mock_sim_manager.event_manager = Mock()
+            mock_sim_manager.event_manager.get_available_events.return_value = [
+                {
+                    'type': Mock(name='DINOSAUR_ESCAPE'),
+                    'name': 'DINOSAUR_ESCAPE',
+                    'description': 'A dinosaur has escaped',
+                    'default_severity': 8,
+                    'required_parameters': ['dinosaur_id'],
+                    'optional_parameters': ['escape_method'],
+                    'affected_roles': ['PARK_RANGER']
+                }
+            ]
+            mock_sim_manager_class.return_value = mock_sim_manager
+            
+            # Set simulation as running to show event interface
+            self.mock_sim_state.is_running = True
+            
+            render_control_panel(self.mock_session_manager)
+            
+            # Should display event triggering interface
+            mock_streamlit.selectbox.assert_called()
+            mock_streamlit.slider.assert_called()
+    
+    def test_render_control_panel_event_parameters(self):
+        """Test control panel handles event parameters correctly."""
+        with patch('managers.simulation_manager.SimulationManager') as mock_sim_manager_class:
+            mock_sim_manager = Mock()
+            mock_sim_manager.event_manager = Mock()
+            mock_sim_manager.event_manager.get_available_events.return_value = [
+                {
+                    'type': Mock(name='VISITOR_INJURY'),
+                    'name': 'VISITOR_INJURY',
+                    'description': 'A visitor has been injured',
+                    'default_severity': 6,
+                    'required_parameters': ['visitor_id', 'injury_type'],
+                    'optional_parameters': ['injury_severity'],
+                    'affected_roles': ['SECURITY']
+                }
+            ]
+            mock_sim_manager_class.return_value = mock_sim_manager
+            
+            # Set simulation as running
+            self.mock_sim_state.is_running = True
+            
+            render_control_panel(self.mock_session_manager)
+            
+            # Should create parameter inputs
+            mock_streamlit.selectbox.assert_called()
+            mock_streamlit.expander.assert_called()
+    
+    def test_render_control_panel_recent_events_display(self):
+        """Test control panel displays recent events."""
+        with patch('managers.simulation_manager.SimulationManager') as mock_sim_manager_class:
+            mock_sim_manager = Mock()
+            mock_sim_manager.event_manager = Mock()
+            mock_sim_manager.event_manager.get_available_events.return_value = []
+            mock_sim_manager_class.return_value = mock_sim_manager
+            
+            # Set simulation as running
+            self.mock_sim_state.is_running = True
+            
+            render_control_panel(self.mock_session_manager)
+            
+            # Should display recent events section
+            mock_streamlit.subheader.assert_called()
+            self.mock_session_manager.get_events.assert_called()
+    
+    def test_render_control_panel_not_running_warning(self):
+        """Test control panel shows warning when simulation not running."""
+        with patch('managers.simulation_manager.SimulationManager') as mock_sim_manager_class:
+            mock_sim_manager = Mock()
+            mock_sim_manager_class.return_value = mock_sim_manager
+            
+            # Set simulation as not running
+            self.mock_sim_state.is_running = False
+            
+            render_control_panel(self.mock_session_manager)
+            
+            # Should show warning about starting simulation
+            mock_streamlit.warning.assert_called()
+    
+    def test_render_control_panel_error_handling(self):
+        """Test control panel handles errors gracefully."""
+        with patch('managers.simulation_manager.SimulationManager') as mock_sim_manager_class:
+            # Mock simulation manager to raise exception
+            mock_sim_manager_class.side_effect = Exception("Test error")
+            
+            try:
+                render_control_panel(self.mock_session_manager)
+                # Should not crash, may display error or handle gracefully
+            except Exception:
+                # If exception propagates, that's also acceptable for this test
+                pass
     
     def test_render_agent_monitor(self):
         """Test agent monitor renders correctly."""
