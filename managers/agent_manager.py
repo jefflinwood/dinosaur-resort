@@ -116,6 +116,8 @@ class AgentManager:
                     agent = self.agent_factory.create_security_guard(f"Security_{i+1}")
                 elif role == AgentRole.MAINTENANCE:
                     agent = self.agent_factory.create_maintenance_worker(f"Maintenance_{i+1}")
+                elif role == AgentRole.GUEST_RELATIONS:
+                    agent = self.agent_factory.create_guest_relations(f"GuestRel_{i+1}")
                 else:
                     continue
                 
@@ -181,7 +183,7 @@ class AgentManager:
         Returns:
             DinosaurAgent instance
         """
-        if agent.role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.MAINTENANCE]:
+        if agent.role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.MAINTENANCE, AgentRole.GUEST_RELATIONS]:
             return self.staff_factory.create_staff_agent(agent)
         elif agent.role == AgentRole.TOURIST:
             return self.visitor_factory.create_tourist_agent(agent)
@@ -218,7 +220,7 @@ class AgentManager:
             
             # Staff only group chat
             staff_agents = [agent for agent in all_agents if agent.role in [
-                AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.MAINTENANCE
+                AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.MAINTENANCE, AgentRole.GUEST_RELATIONS
             ]]
             if staff_agents:
                 self.ag2_integration.group_chat = None  # Reset for new group
@@ -227,7 +229,7 @@ class AgentManager:
             
             # Emergency response team (rangers, security, veterinarians)
             emergency_agents = [agent for agent in all_agents if agent.role in [
-                AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY
+                AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.GUEST_RELATIONS
             ]]
             if emergency_agents:
                 self.ag2_integration.group_chat = None  # Reset for new group
@@ -351,7 +353,7 @@ class AgentManager:
             # Dinosaur events affect staff and nearby visitors
             affected_agents.extend([
                 agent_id for agent_id, agent in self.agents.items()
-                if agent.role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY]
+                if agent.role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.GUEST_RELATIONS]
             ])
             
             # Add nearby visitors and dinosaurs
@@ -362,7 +364,7 @@ class AgentManager:
             # Visitor events affect staff and other visitors
             affected_agents.extend([
                 agent_id for agent_id, agent in self.agents.items()
-                if agent.role in [AgentRole.PARK_RANGER, AgentRole.SECURITY]
+                if agent.role in [AgentRole.PARK_RANGER, AgentRole.SECURITY, AgentRole.GUEST_RELATIONS]
             ])
             
             # Add nearby agents
@@ -488,12 +490,12 @@ class AgentManager:
             if group_name == "emergency":
                 group_agents = [
                     agent_id for agent_id in affected_agents
-                    if self.agents[agent_id].role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY]
+                    if self.agents[agent_id].role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.GUEST_RELATIONS]
                 ]
             else:
                 group_agents = [
                     agent_id for agent_id in affected_agents
-                    if self.agents[agent_id].role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.MAINTENANCE]
+                    if self.agents[agent_id].role in [AgentRole.PARK_RANGER, AgentRole.VETERINARIAN, AgentRole.SECURITY, AgentRole.MAINTENANCE, AgentRole.GUEST_RELATIONS]
                 ]
             
             if not group_agents:

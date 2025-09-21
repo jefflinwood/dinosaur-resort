@@ -2,6 +2,6 @@
 
 from .metrics_manager import MetricsManager
 from .event_manager import EventManager
-from .human_player_manager import HumanPlayerManager
+# Note: HumanPlayerManager should be imported directly to avoid circular imports
 
-__all__ = ['MetricsManager', 'EventManager', 'HumanPlayerManager']
+__all__ = ['MetricsManager', 'EventManager']

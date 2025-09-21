@@ -9,6 +9,7 @@ class AgentRole(Enum):
     VETERINARIAN = auto()
     SECURITY = auto()
     MAINTENANCE = auto()
+    GUEST_RELATIONS = auto()
     TOURIST = auto()
     DINOSAUR = auto()
 

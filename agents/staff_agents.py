@@ -569,6 +569,174 @@ class MaintenanceAgent(DinosaurAgent):
             return "Repair could not be completed. Area cordoned off for safety. Specialist required."
 
 
+class GuestRelationsAgent(DinosaurAgent):
+    """Guest relations agent specialized in visitor satisfaction and damage control."""
+    
+    def __init__(self, agent_model: Agent, openai_config: OpenAIConfig, ag2_config: AG2Config):
+        """Initialize guest relations agent.
+        
+        Args:
+            agent_model: The agent data model
+            openai_config: OpenAI API configuration
+            ag2_config: ag2 framework configuration
+        """
+        super().__init__(agent_model, openai_config, ag2_config)
+        self.expertise_areas = ["public_relations", "damage_control", "visitor_management", "crisis_communication"]
+        self.logger = logging.getLogger(f"{__name__}.GuestRelations.{agent_model.name}")
+        
+        # Guest relations specific attributes
+        self.distraction_tactics = [
+            "free_ice_cream", "special_dinosaur_show", "gift_shop_discount", 
+            "photo_opportunity", "educational_presentation", "surprise_entertainment"
+        ]
+    
+    def create_distraction(self, incident_type: str, severity: int) -> str:
+        """Create a distraction to divert attention from an incident.
+        
+        Args:
+            incident_type: Type of incident occurring
+            severity: Severity level (1-10)
+            
+        Returns:
+            Distraction announcement or activity
+        """
+        self.update_state(AgentState.ACTIVE)
+        
+        try:
+            # Create distraction prompt - keep responses short and snappy
+            distraction_prompt = (
+                f"As guest relations manager, create a brief 1-2 sentence distraction announcement "
+                f"for a {incident_type} incident (severity {severity}). Be creative and upbeat to "
+                f"prevent guest panic. Examples: 'Free ice cream at the entrance plaza!' or "
+                f"'Special T-Rex feeding show starting now at the main viewing area!'"
+            )
+            
+            response = self.generate_reply(
+                messages=[{"content": distraction_prompt, "role": "user", "name": "System"}]
+            )
+            
+            self.logger.info(f"Guest relations {self.agent_model.name} created distraction for {incident_type}")
+            return response if isinstance(response, str) else str(response)
+        
+        except Exception as e:
+            self.logger.error(f"Error creating distraction: {e}")
+            return "Attention guests! Special surprise event happening at the gift shop - limited time offers available!"
+        
+        finally:
+            self.update_state(AgentState.IDLE)
+    
+    def manage_visitor_complaint(self, complaint_details: Dict[str, Any]) -> str:
+        """Handle visitor complaints with damage control.
+        
+        Args:
+            complaint_details: Details about the visitor complaint
+            
+        Returns:
+            Response to address the complaint
+        """
+        self.update_state(AgentState.COMMUNICATING)
+        
+        try:
+            # Create complaint response prompt - keep it brief
+            complaint_prompt = (
+                f"As guest relations manager, provide a brief 1-2 sentence response to this visitor complaint: "
+                f"{complaint_details}. Be apologetic, offer compensation, and redirect to positive aspects. "
+                f"Keep it short and professional."
+            )
+            
+            response = self.generate_reply(
+                messages=[{"content": complaint_prompt, "role": "user", "name": "System"}]
+            )
+            
+            self.logger.info(f"Guest relations {self.agent_model.name} handled visitor complaint")
+            return response if isinstance(response, str) else str(response)
+        
+        except Exception as e:
+            self.logger.error(f"Error handling complaint: {e}")
+            return "We sincerely apologize for any inconvenience. Please accept these complimentary park passes for your next visit!"
+        
+        finally:
+            self.update_state(AgentState.IDLE)
+    
+    def coordinate_damage_control(self, incident_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Coordinate damage control efforts for incidents.
+        
+        Args:
+            incident_info: Information about the incident
+            
+        Returns:
+            Damage control plan and actions
+        """
+        self.update_state(AgentState.RESPONDING_TO_EVENT)
+        
+        try:
+            # Create damage control prompt - emphasize brevity
+            control_prompt = (
+                f"As guest relations manager, create a brief damage control plan for: {incident_info}. "
+                f"Provide 2-3 short bullet points covering: public messaging, visitor distractions, "
+                f"and reputation management. Keep each point to one sentence."
+            )
+            
+            response = self.generate_reply(
+                messages=[{"content": control_prompt, "role": "user", "name": "System"}]
+            )
+            
+            self.logger.info(f"Guest relations {self.agent_model.name} coordinated damage control")
+            
+            return {
+                "status": "damage_control_initiated",
+                "plan": response if isinstance(response, str) else str(response),
+                "agent_id": self.agent_model.id,
+                "timestamp": self.agent_model.last_activity.isoformat()
+            }
+        
+        except Exception as e:
+            self.logger.error(f"Error coordinating damage control: {e}")
+            return {
+                "status": "error",
+                "plan": "Implementing standard damage control protocols: visitor distractions, positive messaging, and incident minimization.",
+                "agent_id": self.agent_model.id,
+                "error": str(e)
+            }
+        
+        finally:
+            self.update_state(AgentState.IDLE)
+    
+    def handle_event_notification(self, event_message: str, event_context: Dict[str, Any]) -> str:
+        """Handle event notifications with guest relations perspective.
+        
+        Args:
+            event_message: Description of the event
+            event_context: Additional context about the event
+            
+        Returns:
+            Guest relations response (brief and focused on damage control)
+        """
+        self.update_state(AgentState.RESPONDING_TO_EVENT)
+        
+        try:
+            # Create brief response prompt
+            response_prompt = (
+                f"As guest relations manager, respond to this incident in 1-2 sentences: {event_message}. "
+                f"Focus on damage control, visitor safety, and maintaining positive park image. "
+                f"Be concise and action-oriented."
+            )
+            
+            response = self.generate_reply(
+                messages=[{"content": response_prompt, "role": "user", "name": "EventSystem"}]
+            )
+            
+            self.logger.info(f"Guest relations {self.agent_model.name} responded to event: {event_message}")
+            return response if isinstance(response, str) else str(response)
+        
+        except Exception as e:
+            self.logger.error(f"Error responding to event: {e}")
+            return "Initiating guest distraction protocols and positive messaging to maintain park reputation."
+        
+        finally:
+            self.update_state(AgentState.IDLE)
+
+
 class StaffAgentFactory:
     """Factory for creating staff agent instances."""
     
@@ -639,6 +807,17 @@ class StaffAgentFactory:
         
         return MaintenanceAgent(agent_model, self.openai_config, self.ag2_config)
     
+    def create_guest_relations_agent(self, agent_model: Agent) -> GuestRelationsAgent:
+        """Create a guest relations agent instance.
+        
+        Args:
+            agent_model: Agent data model
+            
+        Returns:
+            GuestRelationsAgent instance
+        """
+        return GuestRelationsAgent(agent_model, self.openai_config, self.ag2_config)
+    
     def create_staff_agent(self, agent_model: Agent) -> DinosaurAgent:
         """Create appropriate staff agent based on role.
         
@@ -652,7 +831,8 @@ class StaffAgentFactory:
             AgentRole.PARK_RANGER: self.create_park_ranger,
             AgentRole.VETERINARIAN: self.create_veterinarian,
             AgentRole.SECURITY: self.create_security_agent,
-            AgentRole.MAINTENANCE: self.create_maintenance_agent
+            AgentRole.MAINTENANCE: self.create_maintenance_agent,
+            AgentRole.GUEST_RELATIONS: self.create_guest_relations_agent
         }
         
         creator = staff_creators.get(agent_model.role)

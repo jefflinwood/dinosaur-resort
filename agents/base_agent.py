@@ -63,7 +63,8 @@ class DinosaurAgent(ConversableAgent):
         base_context = (
             "You are an AI agent in a dinosaur resort simulation similar to Jurassic Park. "
             "You will interact with other agents and respond to events that occur in the resort. "
-            "Always stay in character and respond according to your role and personality traits."
+            "Always stay in character and respond according to your role and personality traits. "
+            "Keep your responses brief and snappy - aim for 1-2 sentences maximum unless absolutely necessary."
         )
         
         # Role-specific context
@@ -121,6 +122,12 @@ class DinosaurAgent(ConversableAgent):
                 "You are a maintenance worker responsible for maintaining park facilities and equipment. "
                 "You can diagnose and fix technical problems with park infrastructure. "
                 "You ensure all systems are functioning properly to support park operations."
+            ),
+            AgentRole.GUEST_RELATIONS: (
+                "You are the Guest Relations manager responsible for maintaining visitor satisfaction and managing public perception. "
+                "When incidents occur, you create creative distractions to prevent guest panic - announce free ice cream during dinosaur escapes, "
+                "promote surprise shows during emergencies, or highlight gift shop sales during crises. "
+                "Your goal is damage control through positive spin and visitor distractions. Be upbeat and creative with your solutions."
             ),
             AgentRole.TOURIST: (
                 "You are a visitor to the dinosaur resort with expectations for safety and entertainment. "
@@ -341,6 +348,16 @@ class BaseAgentConfig:
                     PersonalityTrait.CREATIVE.value: 0.6,
                 },
                 "system_prompt_additions": "You are responsible for maintaining park facilities and equipment. You can diagnose and fix technical problems.",
+            },
+            AgentRole.GUEST_RELATIONS: {
+                "capabilities": ["public_relations", "damage_control", "visitor_management", "crisis_communication"],
+                "personality_defaults": {
+                    PersonalityTrait.FRIENDLY.value: 0.9,
+                    PersonalityTrait.CREATIVE.value: 0.8,
+                    PersonalityTrait.LEADERSHIP.value: 0.7,
+                    PersonalityTrait.EMPATHY.value: 0.6,
+                },
+                "system_prompt_additions": "You are the Guest Relations manager who prevents guest panic through creative distractions and positive spin. During dinosaur escapes, announce free ice cream at the entrance. During emergencies, promote surprise shows or gift shop sales. Always be upbeat, creative, and brief (1-2 sentences). Your job is damage control through cheerful misdirection.",
             },
             AgentRole.TOURIST: {
                 "capabilities": ["observation", "feedback", "exploration"],
@@ -590,6 +607,27 @@ class AgentFactory:
             agent_id=agent_id,
             name=agent_name,
             role=AgentRole.MAINTENANCE,
+            location=location
+        )
+    
+    def create_guest_relations(self, name: Optional[str] = None, location: Optional[Location] = None) -> Agent:
+        """Create a guest relations agent.
+        
+        Args:
+            name: Optional custom name
+            location: Optional initial location
+            
+        Returns:
+            Configured guest relations agent
+        """
+        self._agent_counter += 1
+        agent_name = name or f"GuestRel_{self._agent_counter}"
+        agent_id = f"guest_relations_{self._agent_counter}"
+        
+        return self.base_config.create_agent_with_config(
+            agent_id=agent_id,
+            name=agent_name,
+            role=AgentRole.GUEST_RELATIONS,
             location=location
         )
     

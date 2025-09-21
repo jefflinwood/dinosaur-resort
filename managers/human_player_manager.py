@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from models.core import HumanAgent, ChatMessage, Agent
 from models.config import Location
 from models.enums import AgentRole, AgentState, MessageType
-from agents.base_agent import DinosaurAgent, BaseAgentConfig
+from agents.base_agent import BaseAgentConfig
 
 
 class ConversationContext:
@@ -98,6 +98,10 @@ class HumanPlayerManager:
             AgentRole.MAINTENANCE: [
                 "staff_coordination", "facility_operations", "equipment_repair", 
                 "technical_support"
+            ],
+            AgentRole.GUEST_RELATIONS: [
+                "staff_coordination", "emergency_response", "visitor_interactions", 
+                "public_relations", "damage_control", "visitor_safety"
             ],
             AgentRole.TOURIST: [
                 "visitor_interactions", "general_inquiries", "feedback"

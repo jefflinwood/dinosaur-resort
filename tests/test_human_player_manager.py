@@ -77,8 +77,10 @@ class TestHumanPlayerManager:
         
         # Check role permissions are set up
         assert AgentRole.PARK_RANGER in human_player_manager.role_permissions
+        assert AgentRole.GUEST_RELATIONS in human_player_manager.role_permissions
         assert AgentRole.TOURIST in human_player_manager.role_permissions
         assert "staff_coordination" in human_player_manager.role_permissions[AgentRole.PARK_RANGER]
+        assert "damage_control" in human_player_manager.role_permissions[AgentRole.GUEST_RELATIONS]
     
     def test_create_human_agent(self, human_player_manager):
         """Test creating a human agent."""
@@ -323,15 +325,19 @@ class TestHumanPlayerManager:
         ranger1 = human_player_manager.create_human_agent(AgentRole.PARK_RANGER, "Ranger 1")
         ranger2 = human_player_manager.create_human_agent(AgentRole.PARK_RANGER, "Ranger 2")
         tourist = human_player_manager.create_human_agent(AgentRole.TOURIST, "Tourist 1")
+        guest_relations = human_player_manager.create_human_agent(AgentRole.GUEST_RELATIONS, "PR Manager")
         
         rangers = human_player_manager.get_human_players_by_role(AgentRole.PARK_RANGER)
         tourists = human_player_manager.get_human_players_by_role(AgentRole.TOURIST)
+        pr_agents = human_player_manager.get_human_players_by_role(AgentRole.GUEST_RELATIONS)
         
         assert len(rangers) == 2
         assert len(tourists) == 1
+        assert len(pr_agents) == 1
         assert ranger1 in rangers
         assert ranger2 in rangers
         assert tourist in tourists
+        assert guest_relations in pr_agents
     
     def test_get_active_human_players(self, human_player_manager):
         """Test getting active human players."""
@@ -473,16 +479,24 @@ class TestHumanPlayerManager:
         # Create different role agents
         ranger = human_player_manager.create_human_agent(AgentRole.PARK_RANGER, "Test Ranger")
         tourist = human_player_manager.create_human_agent(AgentRole.TOURIST, "Test Tourist")
+        guest_relations = human_player_manager.create_human_agent(AgentRole.GUEST_RELATIONS, "PR Manager")
         
         # Create contexts with different topics
         emergency_context = ConversationContext("emergency", ["agent_1"], "emergency_response")
         visitor_context = ConversationContext("visitor", ["agent_2"], "visitor_interactions")
+        damage_control_context = ConversationContext("damage", ["agent_3"], "damage_control")
         
         # Test access permissions
         assert human_player_manager._has_conversation_access(ranger, emergency_context)
         assert not human_player_manager._has_conversation_access(tourist, emergency_context)
         assert not human_player_manager._has_conversation_access(ranger, visitor_context)
         assert human_player_manager._has_conversation_access(tourist, visitor_context)
+        
+        # Test guest relations access
+        assert human_player_manager._has_conversation_access(guest_relations, emergency_context)
+        assert human_player_manager._has_conversation_access(guest_relations, visitor_context)
+        assert human_player_manager._has_conversation_access(guest_relations, damage_control_context)
+        assert not human_player_manager._has_conversation_access(tourist, damage_control_context)
     
     def test_conversation_access_participant(self, human_player_manager):
         """Test conversation access for participants."""
@@ -509,6 +523,38 @@ class TestHumanPlayerManager:
         
         # Should now have access
         assert human_player_manager._has_conversation_access(human_agent, context)
+    
+    def test_guest_relations_role_functionality(self, human_player_manager):
+        """Test Guest Relations role specific functionality."""
+        # Create Guest Relations agent
+        guest_rel_agent = human_player_manager.create_human_agent(AgentRole.GUEST_RELATIONS, "PR Manager")
+        
+        # Test role permissions
+        assert guest_rel_agent.role == AgentRole.GUEST_RELATIONS
+        
+        # Create different conversation contexts
+        emergency_context = human_player_manager.create_conversation_context(["agent_1"], "emergency_response")
+        damage_control_context = human_player_manager.create_conversation_context(["agent_2"], "damage_control")
+        public_relations_context = human_player_manager.create_conversation_context(["agent_3"], "public_relations")
+        
+        # Guest Relations should have access to emergency, damage control, and PR conversations
+        assert human_player_manager._has_conversation_access(guest_rel_agent, emergency_context)
+        assert human_player_manager._has_conversation_access(guest_rel_agent, damage_control_context)
+        assert human_player_manager._has_conversation_access(guest_rel_agent, public_relations_context)
+        
+        # Test that Guest Relations can participate in emergency response
+        success = human_player_manager.add_human_to_conversation(guest_rel_agent.id, emergency_context.conversation_id)
+        assert success is True
+        
+        # Test processing damage control input
+        damage_control_message = "Attention guests! Free ice cream at the entrance plaza while we conduct routine maintenance!"
+        success = human_player_manager.process_human_input(guest_rel_agent.id, damage_control_message, damage_control_context)
+        assert success is True
+        
+        # Verify message was recorded
+        chat_history = human_player_manager.get_human_chat_history(guest_rel_agent.id)
+        assert len(chat_history) == 1
+        assert "ice cream" in chat_history[0].content
 
 
 if __name__ == "__main__":
