@@ -267,7 +267,7 @@ class AgentChatInterface:
         
         with chat_container:
             if st.session_state.agent_chat_messages:
-                messages_to_show = st.session_state.agent_chat_messages[-30:]  # Show last 30 messages
+                messages_to_show = st.session_state.agent_chat_messages[-100:]  # Show last 100 messages
                 st.write(f"**Displaying {len(messages_to_show)} of {len(st.session_state.agent_chat_messages)} messages:**")
                 
                 # Display messages in reverse chronological order (newest first)

@@ -636,16 +636,34 @@ def render_agent_monitor(session_manager: SessionStateManager):
     
     if not agents:
         st.info("No agents to monitor. Start the simulation to see agent activity.")
+        
+        # Show simulation status and helpful information
+        st.subheader("🎮 Getting Started")
+        st.write("To see agent activity:")
+        st.write("1. Go to the **Control Panel** page")
+        st.write("2. Click **▶️ Start** to begin the simulation")
+        st.write("3. Trigger some events to see agents respond")
+        st.write("4. Return here to monitor agent status and communications")
+        
+        # Show current simulation state
+        if sim_state:
+            st.write(f"**Current Simulation Status:** {'🟢 Running' if sim_state.is_running else '🔴 Stopped'}")
+            if sim_state.started_at:
+                st.write(f"**Last Started:** {sim_state.started_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        
         return
     
-    # Auto-refresh controls
+    # Auto-refresh controls and status
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     with col1:
         st.write(f"**Total Agents:** {len(agents)}")
+        # Show simulation status
+        status_text = "🟢 Running" if sim_state.is_running else "🔴 Stopped"
+        st.write(f"**Simulation:** {status_text}")
     with col2:
-        auto_refresh = st.checkbox("Auto-refresh", value=False, help="Automatically refresh agent data every 5 seconds")
+        auto_refresh = st.checkbox("Auto-refresh", value=False, help="Automatically refresh agent data every 5 seconds", key="agent_monitor_auto_refresh")
     with col3:
-        if st.button("🔄 Refresh Now"):
+        if st.button("🔄 Refresh Now", key="agent_monitor_refresh"):
             st.rerun()
     with col4:
         # Test button to add a fake conversation for debugging
@@ -672,11 +690,17 @@ def render_agent_monitor(session_manager: SessionStateManager):
             except Exception as e:
                 st.error(f"Test failed: {str(e)}")
     
-    # Auto-refresh functionality
-    if auto_refresh:
-        import time
-        time.sleep(5)
-        st.rerun()
+    # Auto-refresh functionality - only if we're on the Agent Monitor page
+    current_page = st.session_state.get('selected_page', 'Dashboard')
+    if auto_refresh and current_page == "Agent Monitor":
+        # Use a more controlled refresh mechanism
+        if 'last_agent_monitor_refresh' not in st.session_state:
+            st.session_state.last_agent_monitor_refresh = time.time()
+        
+        current_time = time.time()
+        if current_time - st.session_state.last_agent_monitor_refresh > 5:  # 5 second intervals
+            st.session_state.last_agent_monitor_refresh = current_time
+            st.rerun()
     
     st.divider()
     
@@ -769,6 +793,39 @@ def render_agent_monitor(session_manager: SessionStateManager):
     
     st.write(f"**Showing {len(filtered_agents)} of {len(agents)} agents**")
     
+    # Debug information toggle
+    if st.checkbox("🐛 Show Debug Info", help="Show debug information about agents and data", key="agent_monitor_debug"):
+        st.write("**Debug Information:**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"- Total agents in session: {len(agents)}")
+            st.write(f"- Filtered agents: {len(filtered_agents)}")
+            st.write(f"- Simulation running: {sim_state.is_running}")
+            st.write(f"- Agent roles found: {list(agent_roles.keys())}")
+        
+        with col2:
+            st.write(f"- Agent states found: {list(agent_states.keys())}")
+            st.write(f"- Role filter: {role_filter}")
+            st.write(f"- State filter: {state_filter}")
+            st.write(f"- Search term: '{search_term}'")
+        
+        # Show sample agent data
+        if agents:
+            sample_agent = next(iter(agents.values()))
+            st.write("**Sample Agent Data:**")
+            st.json({
+                "id": sample_agent.id,
+                "name": sample_agent.name,
+                "role": sample_agent.role.name,
+                "state": sample_agent.current_state.name,
+                "location": {
+                    "zone": sample_agent.location.zone,
+                    "x": sample_agent.location.x,
+                    "y": sample_agent.location.y
+                }
+            })
+    
     st.divider()
     
     # Real-time agent status display
@@ -795,59 +852,91 @@ def render_agent_monitor(session_manager: SessionStateManager):
             
             for j, (agent_id, agent) in enumerate(agent_list[i:i+agents_per_row]):
                 with cols[j]:
-                    # Agent card
-                    with st.container():
-                        # Agent header with status indicator
-                        health_info = agent_health_info.get(agent_id, {})
-                        health_status = health_info.get('status', 'unknown')
-                        
-                        status_color = {
-                            'healthy': '🟢',
-                            'degraded': '🟡', 
-                            'unhealthy': '🔴',
-                            'unresponsive': '⚫',
-                            'unknown': '⚪'
-                        }.get(health_status, '⚪')
-                        
-                        role_emoji = {
-                            'PARK_RANGER': '🌲',
-                            'VETERINARIAN': '🩺',
-                            'SECURITY': '🛡️',
-                            'MAINTENANCE': '🔧',
-                            'TOURIST': '🧳',
-                            'DINOSAUR': '🦕'
-                        }.get(agent.role.name, '👤')
-                        
-                        st.write(f"**{status_color} {role_emoji} {agent.name}**")
-                        
-                        # Basic info
-                        st.write(f"*{agent.role.name.replace('_', ' ').title()}*")
-                        st.write(f"**State:** {agent.current_state.name.replace('_', ' ').title()}")
-                        st.write(f"**Location:** {agent.location.zone}")
-                        
-                        # Health info if available
-                        if health_info:
-                            st.write(f"**Health:** {health_status.title()}")
-                            if health_info.get('response_count', 0) > 0:
-                                st.write(f"**Responses:** {health_info['response_count']}")
-                        
-                        # Last activity
-                        if hasattr(agent, 'last_activity') and agent.last_activity:
-                            time_diff = datetime.now() - agent.last_activity
-                            if time_diff.total_seconds() < 60:
-                                st.write("**Last Active:** Just now")
-                            elif time_diff.total_seconds() < 3600:
-                                minutes = int(time_diff.total_seconds() / 60)
-                                st.write(f"**Last Active:** {minutes}m ago")
+                    # Agent card with error handling
+                    try:
+                        with st.container():
+                            # Agent header with status indicator
+                            health_info = agent_health_info.get(agent_id, {})
+                            health_status = health_info.get('status', 'unknown')
+                            
+                            status_color = {
+                                'healthy': '🟢',
+                                'degraded': '🟡', 
+                                'unhealthy': '🔴',
+                                'unresponsive': '⚫',
+                                'unknown': '⚪'
+                            }.get(health_status, '⚪')
+                            
+                            role_emoji = {
+                                'PARK_RANGER': '🌲',
+                                'VETERINARIAN': '🩺',
+                                'SECURITY': '🛡️',
+                                'MAINTENANCE': '🔧',
+                                'GUEST_RELATIONS': '🎭',
+                                'TOURIST': '🧳',
+                                'DINOSAUR': '🦕'
+                            }.get(agent.role.name, '👤')
+                            
+                            st.write(f"**{status_color} {role_emoji} {agent.name}**")
+                            
+                            # Basic info with safe access
+                            role_name = getattr(agent.role, 'name', str(agent.role))
+                            state_name = getattr(agent.current_state, 'name', str(agent.current_state))
+                            
+                            st.write(f"*{role_name.replace('_', ' ').title()}*")
+                            st.write(f"**State:** {state_name.replace('_', ' ').title()}")
+                            
+                            # Location with safe access
+                            if hasattr(agent, 'location') and agent.location:
+                                location_zone = getattr(agent.location, 'zone', 'Unknown')
+                                st.write(f"**Location:** {location_zone}")
                             else:
-                                hours = int(time_diff.total_seconds() / 3600)
-                                st.write(f"**Last Active:** {hours}h ago")
-                        
-                        # View details button
-                        if st.button(f"View Details", key=f"details_{agent_id}"):
-                            st.session_state[f"selected_agent_{agent_id}"] = True
+                                st.write("**Location:** Unknown")
+                            
+                            # Health info if available
+                            if health_info:
+                                st.write(f"**Health:** {health_status.title()}")
+                                if health_info.get('response_count', 0) > 0:
+                                    st.write(f"**Responses:** {health_info['response_count']}")
+                            
+                            # Last activity with safe access
+                            if hasattr(agent, 'last_activity') and agent.last_activity:
+                                try:
+                                    time_diff = datetime.now() - agent.last_activity
+                                    if time_diff.total_seconds() < 60:
+                                        st.write("**Last Active:** Just now")
+                                    elif time_diff.total_seconds() < 3600:
+                                        minutes = int(time_diff.total_seconds() / 60)
+                                        st.write(f"**Last Active:** {minutes}m ago")
+                                    else:
+                                        hours = int(time_diff.total_seconds() / 3600)
+                                        st.write(f"**Last Active:** {hours}h ago")
+                                except Exception:
+                                    st.write("**Last Active:** Unknown")
+                            
+                            # View details button
+                            if st.button(f"View Details", key=f"details_{agent_id}"):
+                                st.session_state[f"selected_agent_{agent_id}"] = True
+                    
+                    except Exception as e:
+                        # Fallback display for problematic agents
+                        st.error(f"Error displaying agent {agent_id}: {str(e)}")
+                        st.write(f"**Agent ID:** {agent_id}")
+                        if hasattr(agent, 'name'):
+                            st.write(f"**Name:** {agent.name}")
     else:
         st.info("No agents match the current filters.")
+        
+        # Show helpful information when no agents match filters
+        if agents:  # We have agents but they're filtered out
+            st.write("**Try adjusting your filters:**")
+            st.write(f"- Available roles: {', '.join(agent_roles.keys())}")
+            st.write(f"- Available states: {', '.join(agent_states.keys())}")
+            if search_term:
+                st.write(f"- Clear the search term: '{search_term}'")
+        else:
+            st.write("**No agents are currently initialized.**")
+            st.write("Start the simulation from the Control Panel to create agents.")
     
     st.divider()
     
