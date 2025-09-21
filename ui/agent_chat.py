@@ -201,23 +201,39 @@ class AgentChatInterface:
                     st.write("🔴 **Real-time:** Inactive")
         
         with col2:
-            if st.button("🔄 Refresh"):
+            if st.button("🔄 Refresh", key="chat_refresh"):
                 st.rerun()
         
         with col3:
-            if st.button("🗑️ Clear Chat"):
+            if st.button("🗑️ Clear Chat", key="chat_clear"):
                 st.session_state.agent_chat_messages = []
                 if self.real_time_chat:
                     self.real_time_chat.clear_chat_history()
                 st.rerun()
         
         with col4:
-            # Auto-refresh toggle
-            auto_refresh = st.checkbox("🔄 Auto", value=True, help="Auto-refresh for real-time updates")
-            if auto_refresh:
-                # Auto-refresh every 2 seconds when enabled
-                time.sleep(0.1)  # Small delay to prevent too frequent updates
-                st.rerun()
+            # Auto-refresh toggle - only enable when on Agent Chat page
+            current_page = st.session_state.get('selected_page', 'Dashboard')
+            auto_refresh_enabled = current_page == "Agent Chat"
+            
+            auto_refresh = st.checkbox(
+                "🔄 Auto", 
+                value=False,  # Default to False to prevent interference
+                help="Auto-refresh for real-time updates (only on Agent Chat page)",
+                key="chat_auto_refresh",
+                disabled=not auto_refresh_enabled
+            )
+            
+            # Only auto-refresh if we're on the Agent Chat page and it's enabled
+            if auto_refresh and auto_refresh_enabled:
+                # Use a more controlled refresh mechanism
+                if 'last_chat_refresh' not in st.session_state:
+                    st.session_state.last_chat_refresh = time.time()
+                
+                current_time = time.time()
+                if current_time - st.session_state.last_chat_refresh > 3:  # 3 second intervals
+                    st.session_state.last_chat_refresh = current_time
+                    st.rerun()
         
         # Real-time statistics
         if self.real_time_chat:

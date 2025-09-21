@@ -40,12 +40,31 @@ def render_sidebar(session_manager: SessionStateManager) -> str:
     """
     st.sidebar.title("🦕 Dinosaur Resort")
     
-    # Navigation menu
+    # Navigation menu with state tracking
+    current_page = st.session_state.get('selected_page', 'Dashboard')
+    page_options = ["Dashboard", "Control Panel", "Agent Monitor", "Agent Chat", "Control Room", "Metrics", "Event Log", "Settings"]
+    
+    # Find current page index
+    try:
+        current_index = page_options.index(current_page)
+    except ValueError:
+        current_index = 0
+    
     page = st.sidebar.selectbox(
         "Navigate to:",
-        ["Dashboard", "Control Panel", "Agent Monitor", "Agent Chat", "Control Room", "Metrics", "Event Log", "Settings"],
-        index=0
+        page_options,
+        index=current_index,
+        key="main_navigation"
     )
+    
+    # Update selected page in session state
+    if page != st.session_state.get('selected_page'):
+        st.session_state['selected_page'] = page
+        # Clear any auto-refresh timers when changing pages
+        if 'last_chat_refresh' in st.session_state:
+            del st.session_state['last_chat_refresh']
+        if 'last_agent_chat_refresh' in st.session_state:
+            del st.session_state['last_agent_chat_refresh']
     
     st.sidebar.divider()
     
@@ -2384,8 +2403,13 @@ def render_agent_chat(session_manager: SessionStateManager):
     Args:
         session_manager: Session state manager instance
     """
-    st.title("💬 Agent Chat")
-    st.write("Real-time communication feed from all agents in the simulation.")
+    # Clear any previous content and ensure we're on the right page
+    st.session_state['selected_page'] = 'Agent Chat'
+    
+    # Use a container to isolate the chat content
+    with st.container():
+        st.title("💬 Agent Chat")
+        st.write("Real-time communication feed from all agents in the simulation.")
     
     try:
         from ui.agent_chat import create_agent_chat_interface
@@ -2471,7 +2495,7 @@ def render_agent_chat(session_manager: SessionStateManager):
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("🧪 Test Real-time Message"):
+            if st.button("🧪 Test Real-time Message", key="agent_chat_test_realtime"):
                 if real_time_chat and real_time_chat.get_statistics()['is_running']:
                     # Create a test event to trigger real-time responses
                     from models.core import Event
@@ -2497,11 +2521,11 @@ def render_agent_chat(session_manager: SessionStateManager):
                     st.error("❌ Real-time chat system not available or not running")
         
         with col2:
-            if st.button("🔄 Force Refresh Chat"):
+            if st.button("🔄 Force Refresh Chat", key="agent_chat_force_refresh"):
                 st.rerun()
         
         with col3:
-            if st.button("🗑️ Clear All Messages"):
+            if st.button("🗑️ Clear All Messages", key="agent_chat_clear_all"):
                 st.session_state.agent_chat_messages = []
                 if real_time_chat:
                     real_time_chat.clear_chat_history()
@@ -2513,10 +2537,17 @@ def render_agent_chat(session_manager: SessionStateManager):
         col1, col2 = st.columns(2)
         
         with col1:
-            auto_refresh = st.checkbox("Auto-refresh chat", value=False, help="Automatically refresh every 10 seconds")
+            # Only allow auto-refresh when we're actually on the Agent Chat page
+            current_page = st.session_state.get('selected_page', 'Dashboard')
+            auto_refresh = st.checkbox(
+                "Auto-refresh chat", 
+                value=False, 
+                help="Automatically refresh every 10 seconds (only on Agent Chat page)",
+                disabled=current_page != "Agent Chat"
+            )
         
         with col2:
-            if st.button("🧪 Add Test Message"):
+            if st.button("🧪 Add Test Message", key="agent_chat_test_msg"):
                 chat_interface.add_agent_message(
                     agent_id='test_agent',
                     agent_name='Test Agent',
@@ -2525,11 +2556,16 @@ def render_agent_chat(session_manager: SessionStateManager):
                 )
                 st.rerun()
         
-        # Auto-refresh functionality
-        if auto_refresh:
-            import time
-            time.sleep(10)
-            st.rerun()
+        # Auto-refresh functionality - only if we're on the Agent Chat page
+        if auto_refresh and current_page == "Agent Chat":
+            # Use a more controlled refresh mechanism
+            if 'last_agent_chat_refresh' not in st.session_state:
+                st.session_state.last_agent_chat_refresh = time.time()
+            
+            current_time = time.time()
+            if current_time - st.session_state.last_agent_chat_refresh > 10:  # 10 second intervals
+                st.session_state.last_agent_chat_refresh = current_time
+                st.rerun()
         
     except Exception as e:
         st.error(f"Error loading agent chat: {str(e)}")
@@ -2649,28 +2685,37 @@ def main():
             st.error(f"Error rendering sidebar: {str(e)}")
             selected_page = "Dashboard"  # Fallback to dashboard
         
-        # Add error boundary for main content
+        # Add error boundary for main content with proper isolation
         try:
-            # Render main content based on selected page
-            if selected_page == "Dashboard":
-                render_dashboard_overview(session_manager)
-            elif selected_page == "Control Panel":
-                render_control_panel(session_manager)
-            elif selected_page == "Agent Monitor":
-                render_agent_monitor(session_manager)
-            elif selected_page == "Agent Chat":
-                render_agent_chat(session_manager)
-            elif selected_page == "Control Room":
-                render_control_room(session_manager)
-            elif selected_page == "Metrics":
-                render_metrics_dashboard(session_manager)
-            elif selected_page == "Event Log":
-                render_event_log(session_manager)
-            elif selected_page == "Settings":
-                render_settings(session_manager)
-            else:
-                st.error(f"Unknown page: {selected_page}")
-                render_dashboard_overview(session_manager)
+            # Use a main container to isolate page content
+            with st.container():
+                # Clear any lingering state from previous pages
+                if 'page_content_rendered' not in st.session_state:
+                    st.session_state.page_content_rendered = {}
+                
+                # Mark current page as being rendered
+                st.session_state.page_content_rendered[selected_page] = True
+                
+                # Render main content based on selected page
+                if selected_page == "Dashboard":
+                    render_dashboard_overview(session_manager)
+                elif selected_page == "Control Panel":
+                    render_control_panel(session_manager)
+                elif selected_page == "Agent Monitor":
+                    render_agent_monitor(session_manager)
+                elif selected_page == "Agent Chat":
+                    render_agent_chat(session_manager)
+                elif selected_page == "Control Room":
+                    render_control_room(session_manager)
+                elif selected_page == "Metrics":
+                    render_metrics_dashboard(session_manager)
+                elif selected_page == "Event Log":
+                    render_event_log(session_manager)
+                elif selected_page == "Settings":
+                    render_settings(session_manager)
+                else:
+                    st.error(f"Unknown page: {selected_page}")
+                    render_dashboard_overview(session_manager)
         
         except Exception as e:
             st.error(f"Error rendering {selected_page} page: {str(e)}")
