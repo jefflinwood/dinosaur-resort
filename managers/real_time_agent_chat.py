@@ -80,6 +80,9 @@ class RealTimeAgentChat:
         self.average_response_time = 0.0
         self.last_activity = datetime.now()
         
+        # System status manager (set by agent manager)
+        self.system_status_manager = None
+        
         # Initialize response templates
         self._initialize_response_templates()
         
@@ -573,6 +576,9 @@ Keep your response brief, natural, and in character. Do not explain your role or
             # Trigger follow-up responses if needed
             self._trigger_follow_up_responses(message)
             
+            # Trigger system status changes based on message content
+            self._trigger_system_status_changes(message)
+            
             self.logger.debug(f"Processed message from {message.sender_name}: {message.content[:50]}...")
         
         except Exception as e:
@@ -1017,3 +1023,104 @@ Keep it brief and show how time has passed or the situation has evolved.
             "is_running": self.is_running,
             "queue_size": self.message_queue.qsize()
         }
+    
+    def _trigger_system_status_changes(self, message: QuickChatMessage) -> None:
+        """Trigger system status changes based on agent messages.
+        
+        Args:
+            message: Message that might trigger system changes
+        """
+        if not self.system_status_manager:
+            return
+        
+        try:
+            from managers.system_status_manager import SystemStatus
+            
+            # Get the agent that sent the message
+            agent = self.active_agents.get(message.sender_id)
+            if not agent:
+                return
+            
+            content_lower = message.content.lower()
+            
+            # Maintenance agents can fix systems
+            if agent.role.name == "MAINTENANCE":
+                if "restored" in content_lower or "repaired" in content_lower or "fixed" in content_lower:
+                    # Restore power systems
+                    if "power" in content_lower:
+                        self.system_status_manager.update_component_status(
+                            "main_power",
+                            SystemStatus.OPERATIONAL,
+                            f"Maintenance action: {message.content}",
+                            message.sender_id
+                        )
+                    # Restore fence systems
+                    elif "fence" in content_lower:
+                        for comp_id in self.system_status_manager.components:
+                            if comp_id.startswith("fence_"):
+                                self.system_status_manager.update_component_status(
+                                    comp_id,
+                                    SystemStatus.OPERATIONAL,
+                                    f"Maintenance action: {message.content}",
+                                    message.sender_id
+                                )
+            
+            # Security agents can affect gates and zones
+            elif agent.role.name == "SECURITY":
+                if "lockdown" in content_lower or "secured" in content_lower:
+                    # Secure gates
+                    for comp_id in self.system_status_manager.components:
+                        if comp_id.endswith("_gate"):
+                            self.system_status_manager.update_component_status(
+                                comp_id,
+                                SystemStatus.WARNING,
+                                f"Security lockdown: {message.content}",
+                                message.sender_id
+                            )
+                elif "all clear" in content_lower or "restored" in content_lower:
+                    # Restore gates
+                    for comp_id in self.system_status_manager.components:
+                        if comp_id.endswith("_gate"):
+                            self.system_status_manager.update_component_status(
+                                comp_id,
+                                SystemStatus.OPERATIONAL,
+                                f"Security all-clear: {message.content}",
+                                message.sender_id
+                            )
+            
+            # Park rangers can affect zones and visitor areas
+            elif agent.role.name == "PARK_RANGER":
+                if "evacuating" in content_lower or "clearing" in content_lower:
+                    # Affect visitor areas
+                    for comp_id in self.system_status_manager.components:
+                        if comp_id.startswith("visitors_"):
+                            self.system_status_manager.update_component_status(
+                                comp_id,
+                                SystemStatus.WARNING,
+                                f"Evacuation in progress: {message.content}",
+                                message.sender_id
+                            )
+                elif "safe" in content_lower and "area" in content_lower:
+                    # Restore visitor areas
+                    for comp_id in self.system_status_manager.components:
+                        if comp_id.startswith("visitors_"):
+                            self.system_status_manager.update_component_status(
+                                comp_id,
+                                SystemStatus.OPERATIONAL,
+                                f"Area secured: {message.content}",
+                                message.sender_id
+                            )
+            
+            # Dinosaurs can affect fences when they escape
+            elif agent.role.name == "DINOSAUR":
+                if "roar" in content_lower and "freedom" in content_lower:
+                    # Dinosaur escape - breach fence
+                    self.system_status_manager.update_component_status(
+                        "fence_enclosure_a",
+                        SystemStatus.CRITICAL,
+                        f"Dinosaur breach: {message.content}",
+                        message.sender_id
+                    )
+        
+        except Exception as e:
+            self.logger.error(f"Error triggering system status changes: {e}")

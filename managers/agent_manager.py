@@ -37,6 +37,9 @@ class AgentManager:
         # Initialize real-time chat system
         self.real_time_chat = RealTimeAgentChat(openai_config)
         
+        # System status manager will be set by simulation manager
+        self.system_status_manager = None
+        
         # Initialize agent factories
         self.base_config = BaseAgentConfig(openai_config, ag2_config)
         self.agent_factory = AgentFactory(self.base_config)
@@ -103,10 +106,20 @@ class AgentManager:
             
             self.logger.info(f"Initialized {len(agents)} agents with ag2 integration and real-time chat")
             return agents
-        
+            
         except Exception as e:
             self.logger.error(f"Error initializing agents: {e}")
             raise
+    
+    def set_system_status_manager(self, system_status_manager) -> None:
+        """Set the system status manager for agent interactions.
+        
+        Args:
+            system_status_manager: SystemStatusManager instance
+        """
+        self.system_status_manager = system_status_manager
+        if self.real_time_chat:
+            self.real_time_chat.system_status_manager = system_status_manager
     
     def _create_staff_agents(self) -> List[Agent]:
         """Create staff agents based on configuration.

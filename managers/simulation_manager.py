@@ -29,6 +29,7 @@ class SimulationManager:
         self.agent_manager: Optional[AgentManager] = None
         self.event_manager: Optional[EventManager] = None
         self.metrics_manager: Optional[MetricsManager] = None
+        self.system_status_manager: Optional['SystemStatusManager'] = None
         
         # Simulation clock and timing
         self.simulation_start_time: Optional[datetime] = None
@@ -92,6 +93,14 @@ class SimulationManager:
             self.metrics_manager = MetricsManager(self.session_manager)
             self.event_manager = EventManager()
             self.agent_manager = AgentManager(openai_config, ag2_config, agent_config)
+            
+            # Initialize system status manager
+            from managers.system_status_manager import SystemStatusManager
+            self.system_status_manager = SystemStatusManager()
+            
+            # Connect system status manager with agent manager
+            if self.agent_manager:
+                self.agent_manager.set_system_status_manager(self.system_status_manager)
             
             # Set up event listener for metrics updates
             self.event_manager.add_event_listener(self._handle_event_for_metrics)
@@ -606,3 +615,11 @@ class SimulationManager:
         if self.agent_manager:
             return self.agent_manager.get_real_time_chat()
         return None
+    
+    def get_system_status_manager(self):
+        """Get the system status manager.
+        
+        Returns:
+            SystemStatusManager instance or None if not available
+        """
+        return self.system_status_manager

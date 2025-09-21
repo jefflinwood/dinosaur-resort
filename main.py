@@ -43,7 +43,7 @@ def render_sidebar(session_manager: SessionStateManager) -> str:
     # Navigation menu
     page = st.sidebar.selectbox(
         "Navigate to:",
-        ["Dashboard", "Control Panel", "Agent Monitor", "Agent Chat", "Metrics", "Event Log", "Settings"],
+        ["Dashboard", "Control Panel", "Agent Monitor", "Agent Chat", "Control Room", "Metrics", "Event Log", "Settings"],
         index=0
     )
     
@@ -2332,6 +2332,52 @@ def render_event_log(session_manager: SessionStateManager):
             )
 
 
+def render_control_room(session_manager: SessionStateManager):
+    """Render the control room system diagram page.
+    
+    Args:
+        session_manager: Session state manager instance
+    """
+    try:
+        from ui.control_room_diagram import create_control_room_diagram
+        
+        # Get system status manager from simulation manager
+        system_status_manager = None
+        if 'simulation_manager' in st.session_state:
+            sim_manager = st.session_state['simulation_manager']
+            if hasattr(sim_manager, 'get_system_status_manager'):
+                system_status_manager = sim_manager.get_system_status_manager()
+        
+        if system_status_manager:
+            # Create and render control room diagram
+            control_room = create_control_room_diagram(system_status_manager)
+            control_room.render_control_room()
+            
+            # Auto-refresh option
+            if st.checkbox("🔄 Auto-refresh", value=False, help="Automatically refresh every 5 seconds"):
+                import time
+                time.sleep(5)
+                st.rerun()
+        else:
+            st.warning("⚠️ Control room not available. Please start the simulation first.")
+            
+            if st.button("🚀 Initialize Control Room"):
+                # Initialize simulation manager if not already done
+                if 'simulation_manager' not in st.session_state:
+                    from managers.simulation_manager import SimulationManager
+                    st.session_state.simulation_manager = SimulationManager(session_manager)
+                
+                st.success("✅ Control room initialized!")
+                st.rerun()
+    
+    except Exception as e:
+        st.error(f"Error loading control room: {str(e)}")
+        st.write("**Troubleshooting:**")
+        st.write("1. Make sure the simulation is properly initialized")
+        st.write("2. Check that all required dependencies are installed")
+        st.write("3. Try refreshing the page")
+
+
 def render_agent_chat(session_manager: SessionStateManager):
     """Render the dedicated agent chat page with real-time updates.
     
@@ -2614,6 +2660,8 @@ def main():
                 render_agent_monitor(session_manager)
             elif selected_page == "Agent Chat":
                 render_agent_chat(session_manager)
+            elif selected_page == "Control Room":
+                render_control_room(session_manager)
             elif selected_page == "Metrics":
                 render_metrics_dashboard(session_manager)
             elif selected_page == "Event Log":
