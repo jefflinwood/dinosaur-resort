@@ -43,7 +43,7 @@ def render_sidebar(session_manager: SessionStateManager) -> str:
     # Navigation menu
     page = st.sidebar.selectbox(
         "Navigate to:",
-        ["Dashboard", "Control Panel", "Agent Monitor", "Metrics", "Event Log", "Settings"],
+        ["Dashboard", "Control Panel", "Agent Monitor", "Agent Chat", "Metrics", "Event Log", "Settings"],
         index=0
     )
     
@@ -178,13 +178,10 @@ def render_dashboard_overview(session_manager: SessionStateManager):
         else:
             st.info("No metrics data available. Start the simulation to begin tracking.")
     
-    # Recent activity
+    # Recent activity with chat preview
     st.subheader("📝 Recent Activity")
     
-    # Combine events and agent communications for a comprehensive activity feed
-    activity_items = []
-    
-    # Add recent events
+    # Show recent events
     events = session_manager.get_events()
     if events:
         recent_events = sorted(events, key=lambda x: x.timestamp, reverse=True)[:3]
@@ -196,36 +193,20 @@ def render_dashboard_overview(session_manager: SessionStateManager):
                 'FAILED': '❌'
             }.get(event.resolution_status.name, '❓')
             
-            activity_items.append({
-                'timestamp': event.timestamp,
-                'type': 'event',
-                'content': f"{status_icon} **{event.type.value}** - {event.timestamp.strftime('%H:%M:%S')}"
-            })
+            st.write(f"{status_icon} **{event.type.value}** - {event.timestamp.strftime('%H:%M:%S')}")
     
-    # Add recent agent communications
-    conversation_history = session_manager.get_conversation_history()
-    if conversation_history:
-        for agent_id, messages in conversation_history.items():
-            for msg in messages[-2:]:  # Last 2 messages per agent
-                try:
-                    msg_time = datetime.fromisoformat(msg.get('timestamp', '').replace('Z', '+00:00'))
-                    agent_name = agents.get(agent_id, {}).get('name', agent_id) if agent_id in agents else agent_id
-                    
-                    activity_items.append({
-                        'timestamp': msg_time,
-                        'type': 'communication',
-                        'content': f"💬 **{agent_name}** responded - {msg_time.strftime('%H:%M:%S')}"
-                    })
-                except (ValueError, AttributeError):
-                    # Skip messages with invalid timestamps
-                    continue
+    # Show recent agent chat messages
+    if 'agent_chat_messages' in st.session_state and st.session_state.agent_chat_messages:
+        st.write("**Recent Agent Communications:**")
+        recent_messages = st.session_state.agent_chat_messages[-3:]  # Last 3 messages
+        
+        for msg in reversed(recent_messages):
+            if msg.get('type') == 'system':
+                st.write(f"🤖 **System:** {msg['message']}")
+            else:
+                st.write(f"💬 **{msg['agent_name']}:** {msg['message'][:50]}...")
     
-    # Sort all activity by timestamp and show recent items
-    if activity_items:
-        activity_items.sort(key=lambda x: x['timestamp'], reverse=True)
-        for item in activity_items[:5]:
-            st.write(item['content'])
-    else:
+    if not events and not st.session_state.get('agent_chat_messages'):
         st.info("No recent activity. Trigger events to see them here.")
 
 
@@ -520,6 +501,17 @@ def render_control_panel(session_manager: SessionStateManager):
             
             st.success(f"✅ Event triggered successfully! Event ID: {event_id}")
             
+            # Add event to chat immediately
+            try:
+                from ui.agent_chat import create_agent_chat_interface
+                chat_interface = create_agent_chat_interface(session_manager)
+                chat_interface.add_system_message(
+                    f"🚨 {selected_event['name'].replace('_', ' ').title()} event triggered (Severity: {severity}/10)",
+                    event_id
+                )
+            except Exception as chat_error:
+                st.warning(f"Could not add event to chat: {str(chat_error)}")
+            
             # Show event details
             with st.expander("Event Details"):
                 st.write(f"**Event ID:** {event_id}")
@@ -528,15 +520,7 @@ def render_control_panel(session_manager: SessionStateManager):
                 st.write(f"**Location:** {zone} - {location_description}")
                 st.write(f"**Parameters:** {filtered_parameters}")
             
-            # Force a real-time sync to capture agent responses
-            try:
-                from utils.real_time_sync import create_real_time_sync_context
-                sync_context = create_real_time_sync_context(session_manager)
-                sync_results = sync_context["synchronizer"].sync_simulation_data(sim_manager)
-                if sync_results.get("data_updated"):
-                    st.info("🔄 Agent responses will appear in the Agent Monitor shortly...")
-            except Exception as sync_error:
-                st.warning(f"Real-time sync issue: {str(sync_error)}")
+            st.info("🔄 Agent responses will appear in the Agent Monitor chat shortly...")
             
             # Auto-refresh to show updated status
             st.rerun()
@@ -639,47 +623,21 @@ def render_agent_monitor(session_manager: SessionStateManager):
         if st.button("🔄 Refresh Now"):
             st.rerun()
     with col4:
-        if st.button("💬 Sync Conversations"):
+        # Test button to add a fake conversation for debugging
+        if st.button("🧪 Test Chat"):
             try:
-                from utils.real_time_sync import create_real_time_sync_context
-                if 'simulation_manager' in st.session_state:
-                    sim_manager = st.session_state['simulation_manager']
-                    if sim_manager:
-                        sync_context = create_real_time_sync_context(session_manager)
-                        sync_results = sync_context["synchronizer"].sync_simulation_data(sim_manager)
-                        
-                        # Show detailed sync results
-                        st.write("**Sync Results:**")
-                        st.write(f"- Success: {sync_results.get('success')}")
-                        st.write(f"- Components synced: {sync_results.get('components_synced', [])}")
-                        st.write(f"- Data updated: {sync_results.get('data_updated')}")
-                        st.write(f"- Errors: {sync_results.get('errors', [])}")
-                        
-                        if sync_results.get("data_updated"):
-                            st.success("✅ Conversations synced!")
-                        else:
-                            st.info("ℹ️ No new conversations")
-                        st.rerun()
+                from ui.agent_chat import create_agent_chat_interface
+                chat_interface = create_agent_chat_interface(session_manager)
+                chat_interface.add_agent_message(
+                    agent_id='test_ranger',
+                    agent_name='Test Ranger',
+                    message='This is a test message to verify the chat is working correctly!',
+                    event_context={'event_id': 'test_event', 'event_type': 'TEST'}
+                )
+                st.success("Test message added to chat!")
+                st.rerun()
             except Exception as e:
-                st.error(f"Sync failed: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
-    
-    # Test button to add a fake conversation for debugging
-    if st.button("🧪 Add Test Conversation"):
-        test_message = {
-            'timestamp': datetime.now().isoformat(),
-            'sender': 'test_agent',
-            'recipient': 'system',
-            'content': 'This is a test message to verify the conversation display is working.',
-            'event_context': {
-                'event_id': 'test_event',
-                'event_type': 'TEST'
-            }
-        }
-        session_manager.add_conversation_message('test_agent', test_message)
-        st.success("Test conversation added!")
-        st.rerun()
+                st.error(f"Test failed: {str(e)}")
     
     # Auto-refresh functionality
     if auto_refresh:
@@ -896,61 +854,119 @@ def render_agent_monitor(session_manager: SessionStateManager):
     
     st.divider()
     
-    # Real-time conversation feed
-    st.subheader("💬 Live Agent Communications")
-    
-    # Debug information
-    if st.checkbox("Show Debug Info", key="agent_debug"):
+    # Agent Chat Interface
+    try:
+        from ui.agent_chat import create_agent_chat_interface
+        
+        # Create chat interface
+        chat_interface = create_agent_chat_interface(session_manager)
+        
+        # Debug info
+        if st.checkbox("Show Chat Debug", key="chat_debug"):
+            st.write(f"**Chat Messages:** {len(st.session_state.get('agent_chat_messages', []))}")
+            if 'simulation_manager' in st.session_state:
+                sim_manager = st.session_state['simulation_manager']
+                if hasattr(sim_manager, 'agent_manager') and sim_manager.agent_manager:
+                    agent_conversations = sim_manager.agent_manager.get_agent_conversations()
+                    st.write(f"**Agent Manager Conversations:** {len(agent_conversations)}")
+                    if agent_conversations:
+                        with st.expander("Raw Conversation Data"):
+                            st.json(agent_conversations[-2:])  # Show last 2
+        
+        # Sync agent conversations to chat
         if 'simulation_manager' in st.session_state:
             sim_manager = st.session_state['simulation_manager']
             if hasattr(sim_manager, 'agent_manager') and sim_manager.agent_manager:
+                # Get recent conversations from agent manager
                 agent_conversations = sim_manager.agent_manager.get_agent_conversations()
-                st.write(f"**Agent Manager Conversations:** {len(agent_conversations)}")
-                if agent_conversations:
-                    with st.expander("Raw Agent Manager Data"):
-                        st.json(agent_conversations[-3:])  # Show last 3
+                
+                # Track which conversations we've already added to chat
+                if 'processed_conversations' not in st.session_state:
+                    st.session_state.processed_conversations = set()
+                
+                # Add new conversations to chat
+                for conv in agent_conversations:
+                    conv_id = f"{conv.get('event_id', 'unknown')}_{conv.get('timestamp', 'unknown')}"
+                    
+                    if conv_id not in st.session_state.processed_conversations:
+                        # Add system message for the event
+                        event_type = conv.get('event_type', 'Unknown Event')
+                        event_id = conv.get('event_id', 'unknown')
+                        chat_interface.add_system_message(
+                            f"🚨 {event_type.replace('_', ' ').title()} event triggered",
+                            event_id
+                        )
+                        
+                        # Add individual agent responses
+                        individual_responses = conv.get('individual_responses', {})
+                        for agent_id, response in individual_responses.items():
+                            # Get agent name
+                            agent_name = agent_id
+                            if agent_id in filtered_agents:
+                                agent_name = filtered_agents[agent_id].name
+                            
+                            chat_interface.add_agent_message(
+                                agent_id=agent_id,
+                                agent_name=agent_name,
+                                message=response,
+                                event_context={
+                                    'event_id': event_id,
+                                    'event_type': event_type
+                                }
+                            )
+                        
+                        st.session_state.processed_conversations.add(conv_id)
         
-        session_conversations = session_manager.get_conversation_history()
-        st.write(f"**Session State Conversations:** {len(session_conversations)} agents")
-        for agent_id, messages in session_conversations.items():
-            st.write(f"  - {agent_id}: {len(messages)} messages")
-    
-    # Show recent conversations across all agents
-    conversation_history = session_manager.get_conversation_history()
-    
-    # Always show the count for debugging
-    st.write(f"**Conversation History Status:** {len(conversation_history)} agents with conversations")
-    
-    if conversation_history:
-        # Get all recent messages (last 10 across all agents)
-        all_messages = []
-        for agent_id, messages in conversation_history.items():
-            for msg in messages[-5:]:  # Last 5 messages per agent
-                msg_with_agent = msg.copy()
-                msg_with_agent['agent_id'] = agent_id
-                # Get agent name from filtered_agents (which contains Agent objects)
-                if agent_id in filtered_agents:
-                    msg_with_agent['agent_name'] = filtered_agents[agent_id].name
-                else:
-                    msg_with_agent['agent_name'] = agent_id
-                all_messages.append(msg_with_agent)
+        # Manual sync button for debugging
+        if st.button("🔄 Force Sync Chat", key="force_sync_agent_monitor"):
+            if 'simulation_manager' in st.session_state:
+                sim_manager = st.session_state['simulation_manager']
+                if hasattr(sim_manager, 'agent_manager') and sim_manager.agent_manager:
+                    agent_conversations = sim_manager.agent_manager.get_agent_conversations()
+                    st.write(f"Found {len(agent_conversations)} conversations to sync")
+                    
+                    # Force sync all conversations (ignore processed check)
+                    for i, conv in enumerate(agent_conversations):
+                        st.write(f"Processing conversation {i+1}: {conv.get('event_type', 'Unknown')}")
+                        
+                        # Add system message for the event
+                        event_type = conv.get('event_type', 'Unknown Event')
+                        event_id = conv.get('event_id', 'unknown')
+                        chat_interface.add_system_message(
+                            f"🚨 {event_type.replace('_', ' ').title()} event triggered",
+                            event_id
+                        )
+                        
+                        # Add individual agent responses
+                        individual_responses = conv.get('individual_responses', {})
+                        for agent_id, response in individual_responses.items():
+                            # Get agent name
+                            agent_name = agent_id
+                            if agent_id in filtered_agents:
+                                agent_name = filtered_agents[agent_id].name
+                            
+                            chat_interface.add_agent_message(
+                                agent_id=agent_id,
+                                agent_name=agent_name,
+                                message=response,
+                                event_context={
+                                    'event_id': event_id,
+                                    'event_type': event_type
+                                }
+                            )
+                            st.write(f"Added message from {agent_name}: {response[:50]}...")
+                    
+                    st.success(f"Synced {len(agent_conversations)} conversations!")
+                    st.rerun()
         
-        # Sort by timestamp
-        all_messages.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        # Render the chat interface
+        chat_interface.render_chat()
         
-        # Display recent messages
-        if all_messages:
-            st.write("**Recent Agent Communications:**")
-            for msg in all_messages[:10]:  # Show last 10 messages
-                with st.expander(f"🤖 {msg.get('agent_name', 'Unknown')} - {msg.get('timestamp', 'Unknown time')[:19]}"):
-                    st.write(f"**Agent:** {msg.get('agent_name', 'Unknown')}")
-                    st.write(f"**Message:** {msg.get('content', 'No content')}")
-                    if msg.get('event_context', {}).get('event_id'):
-                        st.write(f"**Event:** {msg['event_context']['event_id'][:8]}... ({msg['event_context'].get('event_type', 'Unknown')})")
-        else:
-            st.info("No recent agent communications. Agents will appear here when they respond to events.")
-    else:
-        st.info("No agent communications yet. Start the simulation and trigger events to see agent responses.")
+    except Exception as e:
+        st.error(f"Error loading chat interface: {str(e)}")
+        # Fallback to simple display
+        st.subheader("💬 Agent Communications")
+        st.info("Chat interface unavailable. Check logs for details.")
     
     st.divider()
     
@@ -2295,6 +2311,98 @@ def render_event_log(session_manager: SessionStateManager):
             )
 
 
+def render_agent_chat(session_manager: SessionStateManager):
+    """Render the dedicated agent chat page.
+    
+    Args:
+        session_manager: Session state manager instance
+    """
+    st.title("💬 Agent Chat")
+    st.write("Real-time communication feed from all agents in the simulation.")
+    
+    try:
+        from ui.agent_chat import create_agent_chat_interface
+        
+        # Create chat interface
+        chat_interface = create_agent_chat_interface(session_manager)
+        
+        # Auto-sync with agent manager
+        if 'simulation_manager' in st.session_state:
+            sim_manager = st.session_state['simulation_manager']
+            if hasattr(sim_manager, 'agent_manager') and sim_manager.agent_manager:
+                # Get recent conversations from agent manager
+                agent_conversations = sim_manager.agent_manager.get_agent_conversations()
+                
+                # Track which conversations we've already added to chat
+                if 'processed_conversations' not in st.session_state:
+                    st.session_state.processed_conversations = set()
+                
+                # Add new conversations to chat
+                for conv in agent_conversations:
+                    conv_id = f"{conv.get('event_id', 'unknown')}_{conv.get('timestamp', 'unknown')}"
+                    
+                    if conv_id not in st.session_state.processed_conversations:
+                        # Add system message for the event
+                        event_type = conv.get('event_type', 'Unknown Event')
+                        event_id = conv.get('event_id', 'unknown')
+                        chat_interface.add_system_message(
+                            f"🚨 {event_type.replace('_', ' ').title()} event triggered",
+                            event_id
+                        )
+                        
+                        # Add individual agent responses
+                        individual_responses = conv.get('individual_responses', {})
+                        for agent_id, response in individual_responses.items():
+                            # Get agent name from session state
+                            agents = session_manager.get_agents()
+                            agent_name = agent_id
+                            if agent_id in agents:
+                                agent_name = agents[agent_id].name
+                            
+                            chat_interface.add_agent_message(
+                                agent_id=agent_id,
+                                agent_name=agent_name,
+                                message=response,
+                                event_context={
+                                    'event_id': event_id,
+                                    'event_type': event_type
+                                }
+                            )
+                        
+                        st.session_state.processed_conversations.add(conv_id)
+        
+        # Render the chat interface
+        chat_interface.render_chat()
+        
+        # Auto-refresh option
+        st.divider()
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            auto_refresh = st.checkbox("Auto-refresh chat", value=False, help="Automatically refresh every 10 seconds")
+        
+        with col2:
+            if st.button("🧪 Add Test Message"):
+                chat_interface.add_agent_message(
+                    agent_id='test_agent',
+                    agent_name='Test Agent',
+                    message='This is a test message to verify the chat is working!',
+                    event_context={'event_id': 'test', 'event_type': 'TEST'}
+                )
+                st.rerun()
+        
+        # Auto-refresh functionality
+        if auto_refresh:
+            import time
+            time.sleep(10)
+            st.rerun()
+        
+    except Exception as e:
+        st.error(f"Error loading agent chat: {str(e)}")
+        st.write("**Error Details:**")
+        st.code(str(e))
+
+
 def render_settings(session_manager: SessionStateManager):
     """Render the settings page.
     
@@ -2317,6 +2425,11 @@ def render_settings(session_manager: SessionStateManager):
     with col2:
         if st.button("🗑️ Clear All Data"):
             session_manager.clear_all()
+            # Also clear chat messages
+            if 'agent_chat_messages' in st.session_state:
+                st.session_state.agent_chat_messages = []
+            if 'processed_conversations' in st.session_state:
+                st.session_state.processed_conversations = set()
             st.success("All session data cleared!")
             st.rerun()
     
@@ -2411,6 +2524,8 @@ def main():
                 render_control_panel(session_manager)
             elif selected_page == "Agent Monitor":
                 render_agent_monitor(session_manager)
+            elif selected_page == "Agent Chat":
+                render_agent_chat(session_manager)
             elif selected_page == "Metrics":
                 render_metrics_dashboard(session_manager)
             elif selected_page == "Event Log":
