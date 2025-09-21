@@ -122,8 +122,9 @@ class TestSimulationManager:
         simulation_manager.session_manager.set_simulation_config.assert_called_with(simulation_config)
         simulation_manager.session_manager.set_agent_config.assert_called_with(agent_config)
     
+    @patch.dict('os.environ', {}, clear=True)  # Clear all environment variables
     def test_start_simulation_without_openai_config(self, simulation_manager):
-        """Test simulation start fails without OpenAI config."""
+        """Test simulation start fails without OpenAI config and no environment variables."""
         simulation_manager.session_manager.get_openai_config.return_value = None
         
         with pytest.raises(ValueError, match="OpenAI configuration is required"):

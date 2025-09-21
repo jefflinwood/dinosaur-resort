@@ -1,9 +1,15 @@
 """Session state management for Streamlit dashboard."""
 
 import logging
+import os
 import streamlit as st
 from typing import Dict, List, Any, Optional, Type, TypeVar
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 from models.core import Agent, Event, MetricsSnapshot, SimulationState
 from models.config import OpenAIConfig, AG2Config, SimulationConfig, AgentConfig
 

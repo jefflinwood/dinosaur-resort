@@ -62,8 +62,31 @@ class SimulationManager:
             simulation_config = simulation_config or self.session_manager.get_simulation_config()
             agent_config = agent_config or self.session_manager.get_agent_config()
             
+            # If no OpenAI config exists, try to create one from environment variables
             if not openai_config:
-                raise ValueError("OpenAI configuration is required to start simulation")
+                try:
+                    from models.config import OpenAIConfig
+                    openai_config = OpenAIConfig()  # This will read from environment variables
+                    self.session_manager.set_openai_config(openai_config)
+                    self.logger.info("Created OpenAI configuration from environment variables")
+                except Exception as e:
+                    raise ValueError(f"OpenAI configuration is required to start simulation. Please set OPENAI_API_KEY environment variable. Error: {e}")
+            
+            # Create default configs if they don't exist
+            if not ag2_config:
+                from models.config import AG2Config
+                ag2_config = AG2Config()
+                self.session_manager.set_ag2_config(ag2_config)
+            
+            if not simulation_config:
+                from models.config import SimulationConfig
+                simulation_config = SimulationConfig()
+                self.session_manager.set_simulation_config(simulation_config)
+            
+            if not agent_config:
+                from models.config import AgentConfig
+                agent_config = AgentConfig()
+                self.session_manager.set_agent_config(agent_config)
             
             # Initialize managers
             self.metrics_manager = MetricsManager(self.session_manager)

@@ -4,6 +4,11 @@ import streamlit as st
 from datetime import datetime
 from typing import Dict, Any
 import logging
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from ui.session_state import SessionStateManager
 from models.core import SimulationState
