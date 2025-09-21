@@ -596,3 +596,13 @@ class SimulationManager:
             },
             "session_state": self.session_manager.get_session_info()
         }
+    
+    def get_real_time_chat(self):
+        """Get the real-time chat system from the agent manager.
+        
+        Returns:
+            RealTimeAgentChat instance or None if not available
+        """
+        if self.agent_manager:
+            return self.agent_manager.get_real_time_chat()
+        return None

@@ -504,7 +504,13 @@ def render_control_panel(session_manager: SessionStateManager):
             # Add event to chat immediately
             try:
                 from ui.agent_chat import create_agent_chat_interface
-                chat_interface = create_agent_chat_interface(session_manager)
+                
+                # Get real-time chat system
+                real_time_chat = None
+                if hasattr(sim_manager, 'get_real_time_chat'):
+                    real_time_chat = sim_manager.get_real_time_chat()
+                
+                chat_interface = create_agent_chat_interface(session_manager, real_time_chat)
                 chat_interface.add_system_message(
                     f"🚨 {selected_event['name'].replace('_', ' ').title()} event triggered (Severity: {severity}/10)",
                     event_id
@@ -627,7 +633,15 @@ def render_agent_monitor(session_manager: SessionStateManager):
         if st.button("🧪 Test Chat"):
             try:
                 from ui.agent_chat import create_agent_chat_interface
-                chat_interface = create_agent_chat_interface(session_manager)
+                
+                # Get real-time chat system
+                real_time_chat = None
+                if 'simulation_manager' in st.session_state:
+                    sim_manager = st.session_state['simulation_manager']
+                    if hasattr(sim_manager, 'get_real_time_chat'):
+                        real_time_chat = sim_manager.get_real_time_chat()
+                
+                chat_interface = create_agent_chat_interface(session_manager, real_time_chat)
                 chat_interface.add_agent_message(
                     agent_id='test_ranger',
                     agent_name='Test Ranger',
@@ -858,8 +872,15 @@ def render_agent_monitor(session_manager: SessionStateManager):
     try:
         from ui.agent_chat import create_agent_chat_interface
         
-        # Create chat interface
-        chat_interface = create_agent_chat_interface(session_manager)
+        # Get real-time chat system
+        real_time_chat = None
+        if 'simulation_manager' in st.session_state:
+            sim_manager = st.session_state['simulation_manager']
+            if hasattr(sim_manager, 'get_real_time_chat'):
+                real_time_chat = sim_manager.get_real_time_chat()
+        
+        # Create chat interface with real-time chat
+        chat_interface = create_agent_chat_interface(session_manager, real_time_chat)
         
         # Debug info
         if st.checkbox("Show Chat Debug", key="chat_debug"):
@@ -2312,7 +2333,7 @@ def render_event_log(session_manager: SessionStateManager):
 
 
 def render_agent_chat(session_manager: SessionStateManager):
-    """Render the dedicated agent chat page.
+    """Render the dedicated agent chat page with real-time updates.
     
     Args:
         session_manager: Session state manager instance
@@ -2323,10 +2344,27 @@ def render_agent_chat(session_manager: SessionStateManager):
     try:
         from ui.agent_chat import create_agent_chat_interface
         
-        # Create chat interface
-        chat_interface = create_agent_chat_interface(session_manager)
+        # Get real-time chat system from simulation manager
+        real_time_chat = None
+        if 'simulation_manager' in st.session_state:
+            sim_manager = st.session_state['simulation_manager']
+            if hasattr(sim_manager, 'get_real_time_chat'):
+                real_time_chat = sim_manager.get_real_time_chat()
         
-        # Auto-sync with agent manager
+        # Create chat interface with real-time chat system
+        chat_interface = create_agent_chat_interface(session_manager, real_time_chat)
+        
+        # Debug and status information
+        if real_time_chat:
+            stats = real_time_chat.get_statistics()
+            if stats['is_running']:
+                st.success(f"🟢 Real-time chat active: {stats['active_agents']} agents, {stats['total_messages']} messages")
+            else:
+                st.warning("🔴 Real-time chat system not running")
+        else:
+            st.warning("⚠️ Real-time chat system not available - using fallback mode")
+        
+        # Fallback: Auto-sync with agent manager for backward compatibility
         if 'simulation_manager' in st.session_state:
             sim_manager = st.session_state['simulation_manager']
             if hasattr(sim_manager, 'agent_manager') and sim_manager.agent_manager:
@@ -2337,7 +2375,7 @@ def render_agent_chat(session_manager: SessionStateManager):
                 if 'processed_conversations' not in st.session_state:
                     st.session_state.processed_conversations = set()
                 
-                # Add new conversations to chat
+                # Add new conversations to chat (fallback for when real-time chat isn't working)
                 for conv in agent_conversations:
                     conv_id = f"{conv.get('event_id', 'unknown')}_{conv.get('timestamp', 'unknown')}"
                     
@@ -2373,6 +2411,50 @@ def render_agent_chat(session_manager: SessionStateManager):
         
         # Render the chat interface
         chat_interface.render_chat()
+        
+        # Test and debug options
+        st.divider()
+        st.subheader("🧪 Chat Testing & Debug")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🧪 Test Real-time Message"):
+                if real_time_chat and real_time_chat.get_statistics()['is_running']:
+                    # Create a test event to trigger real-time responses
+                    from models.core import Event
+                    from models.config import Location
+                    from models.enums import EventType
+                    
+                    test_event = Event(
+                        id="test_chat_001",
+                        type=EventType.DINOSAUR_ESCAPE,
+                        severity=7,
+                        location=Location(0.0, 0.0, "test_area", "Test area"),
+                        description="Test event for chat system"
+                    )
+                    
+                    # Get all registered agents
+                    active_agents = list(real_time_chat.active_agents.keys())
+                    if active_agents:
+                        real_time_chat.trigger_event_response(test_event, active_agents[:2])  # Test with first 2 agents
+                        st.success(f"✅ Triggered test responses from {min(2, len(active_agents))} agents")
+                    else:
+                        st.warning("⚠️ No agents registered in real-time chat system")
+                else:
+                    st.error("❌ Real-time chat system not available or not running")
+        
+        with col2:
+            if st.button("🔄 Force Refresh Chat"):
+                st.rerun()
+        
+        with col3:
+            if st.button("🗑️ Clear All Messages"):
+                st.session_state.agent_chat_messages = []
+                if real_time_chat:
+                    real_time_chat.clear_chat_history()
+                st.success("✅ Chat cleared")
+                st.rerun()
         
         # Auto-refresh option
         st.divider()

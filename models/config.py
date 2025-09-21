@@ -19,7 +19,8 @@ class Location:
 class AgentConfig:
     """Configuration for initializing agents."""
     staff_count: Dict[AgentRole, int] = field(default_factory=lambda: {
-        AgentRole.PARK_RANGER: 2,
+        AgentRole.GUEST_RELATIONS: 1,
+        AgentRole.PARK_RANGER: 1,
         AgentRole.VETERINARIAN: 1,
         AgentRole.SECURITY: 2,
         AgentRole.MAINTENANCE: 1

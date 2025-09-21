@@ -1,4 +1,4 @@
-"""Agent communication and orchestration system using ag2's GroupChat functionality."""
+"""Agent communication and orchestration system using ag2's GroupChat functionality with real-time chat."""
 
 import logging
 from typing import Dict, List, Optional, Any, Tuple
@@ -8,6 +8,7 @@ from models.core import Agent, Event
 from models.config import OpenAIConfig, AG2Config, AgentConfig, Location
 from models.enums import AgentRole, AgentState, DinosaurSpecies
 from managers.ag2_integration import AG2Integration
+from managers.real_time_agent_chat import RealTimeAgentChat
 from agents.base_agent import DinosaurAgent, BaseAgentConfig, AgentFactory
 from agents.staff_agents import StaffAgentFactory
 from agents.visitor_agents import VisitorAgentFactory
@@ -32,6 +33,9 @@ class AgentManager:
         
         # Initialize ag2 integration
         self.ag2_integration = AG2Integration(openai_config, ag2_config)
+        
+        # Initialize real-time chat system
+        self.real_time_chat = RealTimeAgentChat(openai_config)
         
         # Initialize agent factories
         self.base_config = BaseAgentConfig(openai_config, ag2_config)
@@ -87,11 +91,17 @@ class AgentManager:
                 self.agents[agent.id] = agent
                 self.agent_instances[agent.id] = self._create_agent_instance(agent)
                 self.agent_health[agent.id] = self._initialize_agent_health(agent)
+                
+                # Register agent with real-time chat
+                self.real_time_chat.register_agent(agent)
             
             # Create group chats for different scenarios
             self._initialize_group_chats()
             
-            self.logger.info(f"Initialized {len(agents)} agents with ag2 integration")
+            # Start real-time chat processing
+            self.real_time_chat.start_real_time_processing()
+            
+            self.logger.info(f"Initialized {len(agents)} agents with ag2 integration and real-time chat")
             return agents
         
         except Exception as e:
@@ -285,7 +295,7 @@ class AgentManager:
         return agent_states
     
     def broadcast_event(self, event: Event) -> Dict[str, Any]:
-        """Broadcast an event to all relevant agents.
+        """Broadcast an event to all relevant agents using real-time chat.
         
         Args:
             event: Event to broadcast
@@ -293,36 +303,35 @@ class AgentManager:
         Returns:
             Dictionary with broadcast results and agent responses
         """
-        self.logger.info(f"Broadcasting event {event.id} ({event.type.name}) to agents")
-        print(f"DEBUG: Broadcasting event {event.id} to agents")  # Debug print
+        self.logger.info(f"Broadcasting event {event.id} ({event.type.name}) to agents via real-time chat")
+        print(f"DEBUG: Broadcasting event {event.id} to agents via real-time chat")  # Debug print
         
         try:
             # Determine affected agents based on event type and location
             affected_agents = self._determine_affected_agents(event)
             
-            # Create event message
-            event_message = self._create_event_message(event)
+            # Use real-time chat system for immediate responses
+            self.real_time_chat.trigger_event_response(event, affected_agents)
             
-            # Broadcast to individual agents
+            # Get immediate responses from real-time chat
+            event_messages = self.real_time_chat.get_messages_for_event(event.id)
+            
+            # Convert to legacy format for compatibility
             individual_responses = {}
-            for agent_id in affected_agents:
-                response = self._send_event_to_agent(agent_id, event_message, event)
-                individual_responses[agent_id] = response
+            for msg in event_messages:
+                if msg.message_type == "event_response":
+                    individual_responses[msg.sender_id] = msg.content
             
-            # Initiate group conversation for complex events
-            group_response = None
-            if event.severity >= 6:  # High severity events trigger group discussion
-                group_response = self._initiate_group_event_response(event, affected_agents)
-            
-            # Update conversation history
-            self._record_event_communication(event, individual_responses, group_response)
+            # Record communication for tracking
+            self._record_event_communication(event, individual_responses, None)
             
             return {
                 "event_id": event.id,
                 "affected_agents": affected_agents,
                 "individual_responses": individual_responses,
-                "group_response": group_response,
-                "broadcast_time": datetime.now().isoformat()
+                "real_time_messages": len(event_messages),
+                "broadcast_time": datetime.now().isoformat(),
+                "method": "real_time_chat"
             }
         
         except Exception as e:
@@ -710,6 +719,14 @@ class AgentManager:
             Agent model or None if not found
         """
         return self.agents.get(agent_id)
+    
+    def get_real_time_chat(self) -> RealTimeAgentChat:
+        """Get the real-time chat system.
+        
+        Returns:
+            RealTimeAgentChat instance
+        """
+        return self.real_time_chat
     
     def get_agents_by_role(self, role: AgentRole) -> List[Agent]:
         """Get all agents with a specific role.
