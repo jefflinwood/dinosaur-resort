@@ -92,13 +92,31 @@ def render_sidebar(session_manager: SessionStateManager) -> str:
 
 
 def render_dashboard_overview(session_manager: SessionStateManager):
-    """Render the main dashboard overview page.
+    """Render the main dashboard overview page with real-time updates.
     
     Args:
         session_manager: Session state manager instance
     """
     st.title("🦕 AI Agent Dinosaur Simulator")
     st.write("Welcome to the Dinosaur Resort Simulation Dashboard!")
+    
+    # Apply real-time updates
+    try:
+        from utils.real_time_sync import apply_real_time_updates, create_real_time_sync_context, display_sync_status_indicator
+        
+        # Check if component should refresh
+        should_refresh = apply_real_time_updates("dashboard_overview", session_manager, refresh_interval=15)
+        
+        # Create sync context and display status
+        sync_context = create_real_time_sync_context(session_manager)
+        display_sync_status_indicator(sync_context)
+        
+        # Auto-refresh if needed
+        if should_refresh and st.session_state.get('global_auto_refresh', False):
+            st.rerun()
+            
+    except Exception as e:
+        st.warning(f"Real-time sync unavailable: {str(e)}")
     
     # Current time and simulation status
     col1, col2, col3 = st.columns(3)
@@ -138,7 +156,8 @@ def render_dashboard_overview(session_manager: SessionStateManager):
                 agent_roles[role].append(agent)
             
             for role, role_agents in agent_roles.items():
-                st.write(f"**{role.title()}:** {len(role_agents)} agents")
+                role_display = role.replace('_', ' ').title() if isinstance(role, str) else str(role)
+                st.write(f"**{role_display}:** {len(role_agents)} agents")
         else:
             st.info("No agents currently active. Start the simulation to initialize agents.")
     
@@ -181,7 +200,7 @@ def render_dashboard_overview(session_manager: SessionStateManager):
 
 
 def render_control_panel(session_manager: SessionStateManager):
-    """Render the control panel page.
+    """Render the control panel page with enhanced real-time integration.
     
     Args:
         session_manager: Session state manager instance
@@ -192,12 +211,42 @@ def render_control_panel(session_manager: SessionStateManager):
     # Import simulation manager here to avoid circular imports
     from managers.simulation_manager import SimulationManager
     
-    # Initialize simulation manager if not in session state
-    if 'simulation_manager' not in st.session_state:
-        st.session_state.simulation_manager = SimulationManager(session_manager)
+    # Initialize simulation manager with error handling
+    try:
+        if 'simulation_manager' not in st.session_state:
+            st.session_state.simulation_manager = SimulationManager(session_manager)
+        
+        sim_manager = st.session_state.simulation_manager
+        
+        # Ensure simulation manager is properly connected to session state
+        if sim_manager.session_manager != session_manager:
+            sim_manager.session_manager = session_manager
+        
+    except Exception as e:
+        st.error(f"Failed to initialize simulation manager: {str(e)}")
+        st.write("**Troubleshooting Steps:**")
+        st.write("1. Check that all required environment variables are set (OPENAI_API_KEY)")
+        st.write("2. Verify that all dependencies are installed")
+        st.write("3. Try refreshing the page or clearing session data")
+        
+        if st.button("🔄 Retry Initialization"):
+            if 'simulation_manager' in st.session_state:
+                del st.session_state['simulation_manager']
+            st.rerun()
+        
+        return
     
-    sim_manager = st.session_state.simulation_manager
-    sim_state = session_manager.get_simulation_state()
+    # Get current simulation state with error handling
+    try:
+        sim_state = session_manager.get_simulation_state()
+        
+        # Update simulation time if running
+        if sim_state.is_running and hasattr(sim_manager, 'update_simulation_time'):
+            sim_manager.update_simulation_time()
+            
+    except Exception as e:
+        st.error(f"Error getting simulation state: {str(e)}")
+        return
     
     # Real-time status display
     st.subheader("📊 Simulation Status")
@@ -499,7 +548,7 @@ def render_control_panel(session_manager: SessionStateManager):
 
 
 def render_agent_monitor(session_manager: SessionStateManager):
-    """Render the agent monitoring page.
+    """Render the agent monitoring page with enhanced real-time updates.
     
     Args:
         session_manager: Session state manager instance
@@ -507,9 +556,27 @@ def render_agent_monitor(session_manager: SessionStateManager):
     st.title("🤖 Agent Monitor")
     st.write("Real-time agent status and activity monitoring.")
     
-    # Get agents and simulation state
-    agents = session_manager.get_agents()
-    sim_state = session_manager.get_simulation_state()
+    # Apply real-time updates for agent monitoring
+    try:
+        from utils.real_time_sync import apply_real_time_updates
+        
+        # Check if component should refresh (more frequent for agent monitoring)
+        should_refresh = apply_real_time_updates("agent_monitor", session_manager, refresh_interval=10)
+        
+        # Auto-refresh if needed
+        if should_refresh and st.session_state.get('global_auto_refresh', False):
+            st.rerun()
+            
+    except Exception as e:
+        st.warning(f"Real-time sync unavailable: {str(e)}")
+    
+    # Get agents and simulation state with error handling
+    try:
+        agents = session_manager.get_agents()
+        sim_state = session_manager.get_simulation_state()
+    except Exception as e:
+        st.error(f"Error retrieving agent data: {str(e)}")
+        return
     
     if not agents:
         st.info("No agents to monitor. Start the simulation to see agent activity.")
@@ -851,7 +918,7 @@ def render_agent_monitor(session_manager: SessionStateManager):
 
 
 def render_metrics_dashboard(session_manager: SessionStateManager):
-    """Render the metrics dashboard page.
+    """Render the metrics dashboard page with real-time data updates.
     
     Args:
         session_manager: Session state manager instance
@@ -859,12 +926,29 @@ def render_metrics_dashboard(session_manager: SessionStateManager):
     st.title("📊 Metrics Dashboard")
     st.write("Resort performance metrics and historical trends.")
     
-    # Get metrics manager for advanced functionality
+    # Apply real-time updates for metrics
+    try:
+        from utils.real_time_sync import apply_real_time_updates
+        
+        # Check if component should refresh
+        should_refresh = apply_real_time_updates("metrics_dashboard", session_manager, refresh_interval=20)
+        
+        # Auto-refresh if needed
+        if should_refresh and st.session_state.get('global_auto_refresh', False):
+            st.rerun()
+            
+    except Exception as e:
+        st.warning(f"Real-time sync unavailable: {str(e)}")
+    
+    # Get metrics manager for advanced functionality with error handling
     metrics_manager = None
-    if 'simulation_manager' in st.session_state:
-        sim_manager = st.session_state['simulation_manager']
-        if hasattr(sim_manager, 'metrics_manager'):
-            metrics_manager = sim_manager.metrics_manager
+    try:
+        if 'simulation_manager' in st.session_state:
+            sim_manager = st.session_state['simulation_manager']
+            if hasattr(sim_manager, 'metrics_manager'):
+                metrics_manager = sim_manager.metrics_manager
+    except Exception as e:
+        st.warning(f"Could not access metrics manager: {str(e)}")
     
     # Enhanced control panel
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
@@ -1087,6 +1171,7 @@ def render_metrics_dashboard(session_manager: SessionStateManager):
     st.write(f"**Showing {len(filtered_history)} data points over {time_range}**")
     
     # Historical metrics charts and trend visualization
+    chart_data = None
     if metrics_to_show:
         # Prepare data for visualization
         chart_data = _prepare_chart_data(filtered_history, metrics_to_show)
@@ -1248,25 +1333,25 @@ def render_metrics_dashboard(session_manager: SessionStateManager):
         
         # Allow users to set custom goals
         if 'custom_goals' not in st.session_state:
-            st.session_state.custom_goals = {}
+            st.session_state['custom_goals'] = {}
         
         for metric in metrics_to_show:
             metric_key = _get_metric_key(metric)
             current_value = getattr(latest_metrics, metric_key, 0) * 100
             
             goal_key = f"goal_{metric_key}"
-            if goal_key not in st.session_state.custom_goals:
-                st.session_state.custom_goals[goal_key] = 80.0  # Default goal
+            if goal_key not in st.session_state.get('custom_goals', {}):
+                st.session_state['custom_goals'][goal_key] = 80.0  # Default goal
             
             goal_value = st.number_input(
                 f"{metric} Goal (%)",
                 min_value=0.0,
                 max_value=100.0,
-                value=st.session_state.custom_goals[goal_key],
+                value=st.session_state.get('custom_goals', {}).get(goal_key, 80.0),
                 step=1.0,
                 key=f"goal_input_{metric_key}"
             )
-            st.session_state.custom_goals[goal_key] = goal_value
+            st.session_state['custom_goals'][goal_key] = goal_value
             
             # Calculate progress towards goal
             progress = min(100, (current_value / goal_value) * 100) if goal_value > 0 else 0
@@ -2105,33 +2190,158 @@ def render_settings(session_manager: SessionStateManager):
 
 
 def main():
-    """Main application entry point."""
-    # Configure page
-    configure_page()
+    """Main application entry point with enhanced error handling and real-time updates."""
+    try:
+        # Configure page
+        configure_page()
+        
+        # Initialize session state manager with error handling
+        try:
+            session_manager = SessionStateManager()
+        except Exception as e:
+            st.error(f"Failed to initialize session state: {str(e)}")
+            st.stop()
+        
+        # Add real-time update controls in sidebar
+        with st.sidebar:
+            st.divider()
+            st.write("**Real-time Updates:**")
+            
+            # Global auto-refresh setting
+            auto_refresh_enabled = st.checkbox(
+                "Enable Auto-refresh",
+                value=st.session_state.get('global_auto_refresh', False),
+                help="Automatically refresh all dashboard data"
+            )
+            st.session_state['global_auto_refresh'] = auto_refresh_enabled
+            
+            if auto_refresh_enabled:
+                refresh_interval = st.selectbox(
+                    "Refresh Interval",
+                    options=[5, 10, 15, 30, 60],
+                    index=1,
+                    format_func=lambda x: f"{x} seconds",
+                    help="How often to refresh data"
+                )
+                st.session_state['refresh_interval'] = refresh_interval
+                
+                # Auto-refresh logic
+                import time
+                if 'last_refresh' not in st.session_state:
+                    st.session_state['last_refresh'] = time.time()
+                
+                current_time = time.time()
+                if current_time - st.session_state['last_refresh'] >= refresh_interval:
+                    st.session_state['last_refresh'] = current_time
+                    st.rerun()
+            
+            # Manual refresh button
+            if st.button("🔄 Refresh All Data", use_container_width=True):
+                # Clear any cached data and force refresh
+                if 'simulation_manager' in st.session_state:
+                    try:
+                        sim_manager = st.session_state['simulation_manager']
+                        if hasattr(sim_manager, 'update_simulation_time'):
+                            sim_manager.update_simulation_time()
+                    except Exception as e:
+                        st.warning(f"Could not update simulation time: {str(e)}")
+                
+                st.rerun()
+        
+        # Render sidebar and get selected page with error handling
+        try:
+            selected_page = render_sidebar(session_manager)
+        except Exception as e:
+            st.error(f"Error rendering sidebar: {str(e)}")
+            selected_page = "Dashboard"  # Fallback to dashboard
+        
+        # Add error boundary for main content
+        try:
+            # Render main content based on selected page
+            if selected_page == "Dashboard":
+                render_dashboard_overview(session_manager)
+            elif selected_page == "Control Panel":
+                render_control_panel(session_manager)
+            elif selected_page == "Agent Monitor":
+                render_agent_monitor(session_manager)
+            elif selected_page == "Metrics":
+                render_metrics_dashboard(session_manager)
+            elif selected_page == "Event Log":
+                render_event_log(session_manager)
+            elif selected_page == "Settings":
+                render_settings(session_manager)
+            else:
+                st.error(f"Unknown page: {selected_page}")
+                render_dashboard_overview(session_manager)
+        
+        except Exception as e:
+            st.error(f"Error rendering {selected_page} page: {str(e)}")
+            st.write("**Error Details:**")
+            st.code(str(e))
+            
+            # Provide fallback options
+            st.write("**Recovery Options:**")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("🏠 Go to Dashboard"):
+                    st.session_state['selected_page'] = 'Dashboard'
+                    st.rerun()
+            
+            with col2:
+                if st.button("🔄 Refresh Session"):
+                    st.rerun()
+            
+            with col3:
+                if st.button("🗑️ Reset Session"):
+                    session_manager.clear_all()
+                    st.rerun()
+        
+        # Enhanced footer with system status
+        st.divider()
+        
+        # System status footer
+        footer_col1, footer_col2, footer_col3 = st.columns([2, 1, 1])
+        
+        with footer_col1:
+            st.caption(f"AI Agent Dinosaur Simulator | Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        with footer_col2:
+            # Connection status indicator
+            try:
+                sim_state = session_manager.get_simulation_state()
+                if sim_state.is_running:
+                    st.caption("🟢 System Online")
+                else:
+                    st.caption("🟡 System Ready")
+            except Exception:
+                st.caption("🔴 System Error")
+        
+        with footer_col3:
+            # Performance indicator
+            session_info = session_manager.get_session_info()
+            total_objects = session_info.get('agent_count', 0) + session_info.get('event_count', 0)
+            if total_objects > 100:
+                st.caption("🟡 High Load")
+            elif total_objects > 50:
+                st.caption("🟢 Normal Load")
+            else:
+                st.caption("🟢 Light Load")
     
-    # Initialize session state manager
-    session_manager = SessionStateManager()
-    
-    # Render sidebar and get selected page
-    selected_page = render_sidebar(session_manager)
-    
-    # Render main content based on selected page
-    if selected_page == "Dashboard":
-        render_dashboard_overview(session_manager)
-    elif selected_page == "Control Panel":
-        render_control_panel(session_manager)
-    elif selected_page == "Agent Monitor":
-        render_agent_monitor(session_manager)
-    elif selected_page == "Metrics":
-        render_metrics_dashboard(session_manager)
-    elif selected_page == "Event Log":
-        render_event_log(session_manager)
-    elif selected_page == "Settings":
-        render_settings(session_manager)
-    
-    # Footer
-    st.divider()
-    st.caption(f"AI Agent Dinosaur Simulator | Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    except Exception as e:
+        # Top-level error handler
+        st.error("🚨 **Critical Application Error**")
+        st.write("The application encountered a critical error and cannot continue.")
+        st.code(str(e))
+        
+        st.write("**Recovery Actions:**")
+        if st.button("🔄 Restart Application"):
+            # Clear all session state and restart
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+        
+        st.write("If the problem persists, please check the application logs and configuration.")
 
 
 if __name__ == "__main__":
